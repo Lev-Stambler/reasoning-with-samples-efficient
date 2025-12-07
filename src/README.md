@@ -161,7 +161,50 @@ See `benchmark_template.py` for complete examples (SWEBench, MATH).
 - Uses Metropolis-Hastings accept/reject
 - Explores alternative solutions
 - Refines through multiple proposals
-- Configurable: `--mcmc-steps N`
+- Configurable: `--mcmc-steps N`, `--temperature T`
+
+## MCMC Power Sampling: Implementation Notes
+
+The MCMC sampling in `src/` implements power sampling from the paper ["Reasoning with Sampling"](https://arxiv.org/abs/2510.14901).
+
+### Algorithm
+
+**Target distribution:** π(x) = p(x)^α where α > 1 concentrates on high-probability sequences.
+
+**Proposal distribution:** q(x) = p(x) (base model at temperature=1)
+
+**Metropolis-Hastings acceptance:**
+```
+log A = log(π(x')/π(x)) + log(q(x)/q(x'))
+      = α·log p(x') - α·log p(x) + log p(x) - log p(x')
+      = (α - 1) · [log p(x') - log p(x)]
+```
+
+For **α=4** (default): proposals with higher log probability are **3x** more likely to be accepted.
+
+### What's Implemented
+
+| Feature | Paper | `src/` | Notes |
+|---------|-------|--------|-------|
+| **Partial regeneration** | ✓ | ✓ | Pick random idx, regenerate suffix |
+| **MH acceptance** | ✓ | ✓ | Accept/reject based on suffix log probs |
+| **Block-wise generation** | B=192 tokens | ❌ | API generates full completions |
+| **Proposal q = p^α** | Temperature-scaled | q = p | API only gives log p, not log q |
+
+Partial regeneration works by sending the prefix as an assistant message and letting the model continue.
+
+### Usage
+
+```bash
+# src/ version (API-based)
+python src/run_benchmark.py --strategies mcmc --mcmc-steps 10
+
+# Experiment version (local models, full algorithm with B=192)
+cd llm_experiments/
+python power_samp_math.py --model qwen_math --mcmc_steps 10
+```
+
+For research reproducing the paper's results, use the experiment code with local models.
 
 ### 3. Temperature Sampling
 - Standard stochastic sampling

@@ -22,6 +22,8 @@ dependencies = [
     "requests",
     "python-dotenv",
     "tabulate",
+    "hydra-core>=1.3.0",
+    "omegaconf>=2.3.0",
     "alpaca-eval",
     "ray",
     "tiktoken",
