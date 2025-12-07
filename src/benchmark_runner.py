@@ -96,8 +96,10 @@ class MCMCSampling(SamplingStrategy):
         proposal_temperature: float = 1.0,
         temperature: float = None,  # Legacy alias for proposal_temperature
         restrict_to_last_n: int = None,  # Only resample last N tokens (None = disabled)
+        block_size: int = 192,  # Block size B for block-wise generation (paper default)
+        debug: bool = False,  # Print debug info during MCMC
     ):
-        name = f"MCMC(α={alpha},steps={mcmc_steps})"
+        name = f"MCMC(α={alpha},steps={mcmc_steps},B={block_size})"
         if restrict_to_last_n is not None:
             name += f",lastN={restrict_to_last_n}"
         super().__init__(name)
@@ -107,6 +109,8 @@ class MCMCSampling(SamplingStrategy):
         # Support legacy 'temperature' parameter as alias for proposal_temperature
         self.proposal_temperature = temperature if temperature is not None else proposal_temperature
         self.restrict_to_last_n = restrict_to_last_n
+        self.block_size = block_size
+        self.debug = debug
 
     def _extract_logprobs_with_tokens(self, response) -> tuple[list[str], list[float], list[float]]:
         """
@@ -137,11 +141,14 @@ class MCMCSampling(SamplingStrategy):
 
         text = response.choices[0].message.content
         tokens, log_p, log_target = self._extract_logprobs_with_tokens(response)
+        # Track if completion ended naturally (EOS) vs hitting max_tokens
+        finished_naturally = response.choices[0].finish_reason == "stop"
 
         return (
             text, tokens, log_p, log_target,
             response.usage.prompt_tokens,
-            response.usage.completion_tokens
+            response.usage.completion_tokens,
+            finished_naturally
         )
 
     def _sample_continuation(self, client: OpenAI, prompt: str, prefix: str, max_tokens: int):
@@ -164,90 +171,133 @@ class MCMCSampling(SamplingStrategy):
 
         continuation = response.choices[0].message.content
         tokens, log_p, log_target = self._extract_logprobs_with_tokens(response)
+        finished_naturally = response.choices[0].finish_reason == "stop"
 
         return (
             continuation, tokens, log_p, log_target,
             response.usage.prompt_tokens,
-            response.usage.completion_tokens
+            response.usage.completion_tokens,
+            finished_naturally
         )
 
     def generate(self, client: OpenAI, prompt: str, max_tokens: int = 512) -> tuple[str, int, int]:
         """
-        Generate completion using MCMC power sampling with partial regeneration.
+        Generate completion using MCMC power sampling with block-wise generation.
 
-        For each MCMC step:
-        1. Pick random token position idx
-        2. Keep prefix (tokens 0 to idx-1)
-        3. Regenerate suffix from idx onwards
-        4. Accept/reject based on suffix log probabilities
+        Algorithm (matching paper):
+        1. Generate tokens block-by-block (B tokens per block)
+        2. After each block, run MCMC refinement steps
+        3. MCMC uses block-aligned index selection (idx = block_idx * B)
+        4. After all blocks, truncate at EOS if present
         """
         total_prompt_tokens = 0
         total_completion_tokens = 0
         attempts = 0
         acceptances = 0
 
-        # Initial sample from base model
-        current_text, tokens_cur, log_p_cur, log_target_cur, pt, ct = self._sample_full(
-            client, prompt, max_tokens
-        )
-        total_prompt_tokens += pt
-        total_completion_tokens += ct
+        # Initialize with empty generation
+        tokens_cur = []
+        log_p_cur = []
+        log_target_cur = []
 
-        # MCMC refinement steps with partial regeneration
-        for _ in range(self.mcmc_steps):
-            if len(tokens_cur) < 2:
-                # Need at least 2 tokens to do partial regeneration
-                continue
+        # Calculate number of blocks to generate
+        num_blocks_to_generate = max_tokens // self.block_size
+        if num_blocks_to_generate < 1:
+            num_blocks_to_generate = 1
 
-            attempts += 1
+        if self.debug:
+            print(f"[MCMC] Block-wise generation: {num_blocks_to_generate} blocks of {self.block_size} tokens")
 
-            # Pick random position to regenerate from
-            # If restrict_to_last_n is set, only resample from last N tokens
-            if self.restrict_to_last_n is not None:
-                min_idx = max(1, len(tokens_cur) - self.restrict_to_last_n)
+        # Generate block by block
+        for block_num in range(num_blocks_to_generate):
+            # Generate next block
+            prefix = "".join(tokens_cur) if tokens_cur else ""
+
+            if block_num == 0:
+                # First block: use _sample_full (no prefix)
+                block_text, block_tokens, block_log_p, block_log_target, pt, ct, _ = self._sample_full(
+                    client, prompt, self.block_size
+                )
             else:
-                min_idx = 1  # At least keep first token
+                # Subsequent blocks: continue from prefix
+                block_text, block_tokens, block_log_p, block_log_target, pt, ct, _ = self._sample_continuation(
+                    client, prompt, prefix, self.block_size
+                )
 
-            # Ensure min_idx doesn't exceed valid range
-            max_idx = len(tokens_cur) - 1
-            if min_idx > max_idx:
-                # restrict_to_last_n is too small, skip this step
-                continue
-
-            idx = random.randint(min_idx, max_idx)
-
-            # Prefix to keep (as text)
-            prefix = "".join(tokens_cur[:idx])
-
-            # Generate new suffix
-            new_suffix, tokens_prop, log_p_prop, log_target_prop, pt, ct = self._sample_continuation(
-                client, prompt, prefix, max_tokens - idx
-            )
             total_prompt_tokens += pt
             total_completion_tokens += ct
 
-            # Current suffix logprobs (from idx onwards)
-            log_p_cur_suffix = log_p_cur[idx:]
-            log_target_cur_suffix = log_target_cur[idx:]
+            # Extend current state with new block
+            tokens_cur.extend(block_tokens)
+            log_p_cur.extend(block_log_p)
+            log_target_cur.extend(block_log_target)
 
-            # MH acceptance ratio for suffixes only
-            # log A = log(π(suffix')/π(suffix)) + log(q(suffix)/q(suffix'))
-            log_r = (
-                sum(log_target_prop) + sum(log_p_cur_suffix)
-                - sum(log_target_cur_suffix) - sum(log_p_prop)
-            )
+            if self.debug:
+                print(f"[MCMC] Block {block_num+1}/{num_blocks_to_generate}: generated {len(block_tokens)} tokens, total={len(tokens_cur)}")
 
-            # Accept with probability min(1, exp(log_r))
-            if np.random.rand() < np.exp(log_r):
-                acceptances += 1
-                # Update current state with new suffix
-                current_text = prefix + new_suffix
-                tokens_cur = tokens_cur[:idx] + tokens_prop
-                log_p_cur = log_p_cur[:idx] + log_p_prop
-                log_target_cur = log_target_cur[:idx] + log_target_prop
+            # Run MCMC refinement steps on current state
+            for step in range(self.mcmc_steps):
+                # Block-aligned index selection
+                num_complete_blocks = len(tokens_cur) // self.block_size
+                if num_complete_blocks < 2:
+                    # Need at least 2 blocks to do partial regeneration
+                    if self.debug:
+                        print(f"[MCMC]   Step {step+1}: Skipping, only {num_complete_blocks} complete blocks")
+                    continue
+
+                attempts += 1
+
+                # Pick random block boundary (keep at least first block)
+                block_idx = random.randint(1, num_complete_blocks - 1)
+                idx = block_idx * self.block_size
+
+                # Prefix to keep (as text)
+                prefix = "".join(tokens_cur[:idx])
+
+                # Target length for proposal (same as current)
+                target_len = len(tokens_cur) - idx
+
+                # Generate new suffix
+                new_suffix, tokens_prop, log_p_prop, log_target_prop, pt, ct, _ = self._sample_continuation(
+                    client, prompt, prefix, target_len
+                )
+                total_prompt_tokens += pt
+                total_completion_tokens += ct
+
+                # Current suffix logprobs (from idx onwards)
+                log_p_cur_suffix = log_p_cur[idx:]
+                log_target_cur_suffix = log_target_cur[idx:]
+
+                # MH acceptance ratio for suffixes only
+                # log A = log(π(suffix')/π(suffix)) + log(q(suffix)/q(suffix'))
+                log_r = (
+                    sum(log_target_prop) + sum(log_p_cur_suffix)
+                    - sum(log_target_cur_suffix) - sum(log_p_prop)
+                )
+
+                # Accept with probability min(1, exp(log_r))
+                accepted = np.random.rand() < np.exp(log_r)
+
+                if self.debug:
+                    status = "ACCEPT" if accepted else "REJECT"
+                    print(f"[MCMC]   Step {step+1}: block_idx={block_idx}, idx={idx}, log_r={log_r:.3f}, {status}")
+
+                if accepted:
+                    acceptances += 1
+                    # Update current state with new suffix
+                    tokens_cur = tokens_cur[:idx] + tokens_prop
+                    log_p_cur = log_p_cur[:idx] + log_p_prop
+                    log_target_cur = log_target_cur[:idx] + log_target_prop
+
+        # Reconstruct text from final tokens
+        current_text = "".join(tokens_cur)
 
         # Store acceptance ratio for diagnostics
         self._last_acceptance_ratio = acceptances / attempts if attempts > 0 else 0.0
+
+        if self.debug:
+            print(f"[MCMC] Final: {len(tokens_cur)} tokens, acceptance={self._last_acceptance_ratio:.1%}")
+            print(f"[MCMC] Final text: {current_text[:200]}..." if len(current_text) > 200 else f"[MCMC] Final text: {current_text}")
 
         return current_text, total_prompt_tokens, total_completion_tokens
 

@@ -158,6 +158,8 @@ def main(cfg: DictConfig):
             top_logprobs=cfg.mcmc.top_logprobs,
             proposal_temperature=cfg.mcmc.proposal_temperature,
             restrict_to_last_n=cfg.mcmc.restrict_to_last_n,
+            block_size=cfg.mcmc.block_size,
+            debug=cfg.mcmc.debug,
         ))
 
     if cfg.temperature_sampling.enabled:
