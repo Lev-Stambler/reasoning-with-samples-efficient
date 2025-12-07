@@ -391,8 +391,8 @@ class ParallelMCMCSampling(SamplingStrategy):
 
     Fixes from original:
     1. Adds Hastings correction to acceptance ratio:
-       Ratio = (P(x')^alpha / P(x)^alpha) * (P(x) / P(x'))
-             = (P(x') / P(x))^(alpha - 1)
+       Ratio = (sum_i P(x_i')^alpha / sum_i P(x_i)^alpha) * (P(x) / P(x'))
+             = (P(x') / P(x))^(alpha - 1) # TODO: claude, this is wrong
     2. Removes destructive truncation. Proposals of different lengths
        are handled by penalizing the 'missing' tokens of the shorter sequence
        (or strictly requiring same length, though this implementation uses masking).
@@ -595,53 +595,50 @@ class ParallelMCMCSampling(SamplingStrategy):
 
     def _compute_transition_matrix(self, proposals: List[Proposal]) -> np.ndarray:
         """
-        Computes Calderhead transition matrix for parallel MCMC.
+        Computes transition matrix for parallel MCMC with MH acceptance.
 
-        Following Calderhead 2014 (PNAS), for N proposals all generated from
-        the same proposal distribution, the acceptance ratio is simply:
+        Following "Reasoning with Sampling" (Eq. 9):
 
-        R(i,j) = π(x_j) / π(x_i)
+        A(x, x') = min{1, [p(x')^α · q(x|x')] / [p(x)^α · q(x'|x)]}
 
-        With target π(x) = P(x)^α:
+        With independent proposal q(x) = p(x), in log space:
 
-        R(i,j) = P(x_j)^α / P(x_i)^α
+        log R(i,j) = [α·log P(j) + log P(i)] - [α·log P(i) + log P(j)]
+                   = log_target_j + log_p_i - log_target_i - log_p_j
 
-        Log R(i,j) = α * (sum(log_p_j) - sum(log_p_i))
+        This matches the serial MCMC's acceptance ratio formula.
 
-        No Hastings correction needed when all proposals (including current state)
-        are treated symmetrically as samples from the same proposal kernel.
-
-        Transition probabilities:
+        Transition probabilities (Calderhead structure):
         A(i,j) = (1/N) * min(1, R(i,j))  for i ≠ j
         A(i,i) = 1 - Σ_{j≠i} A(i,j)
         """
         N = len(proposals)
         A = np.zeros((N, N))
 
-        # For strict Calderhead: compare at the current state's length
-        # proposals[0] is the current state - use its length as reference
+        # Compare at the current state's length (proposals[0])
         ref_len = len(proposals[0].tokens)
 
-        # Calculate log π(x) = α * log P(x) for each proposal
-        # All proposals must be compared at the SAME length for fairness
-        # Proposals shorter than ref_len get very low score (effectively rejected)
-        scores = []
+        # Compute log_p and log_target for each proposal (truncated to ref_len)
+        log_p_list = []
+        log_target_list = []
         for p in proposals:
             if len(p.tokens) >= ref_len:
-                score = sum(p.log_p[:ref_len]) * self.alpha
+                lp = sum(p.log_p[:ref_len])
+                lt = sum(p.log_target[:ref_len])  # log_target = α * log_p
             else:
-                # Proposal too short - assign very low score (avoids -inf NaN issues)
-                score = -1e10
-            scores.append(score)
-            
-        scores = np.array(scores)
+                # Proposal too short - assign very low score
+                lp = -1e10
+                lt = -1e10
+            log_p_list.append(lp)
+            log_target_list.append(lt)
 
+        # Compute transition matrix using MH ratio (matching serial MCMC)
         for i in range(N):
             for j in range(N):
                 if i != j:
-                    log_R = scores[j] - scores[i]
-                    # Calderhead Eq: A(i,j) = 1/N * min(1, R)
-                    # We clamp log_R to avoid overflow in exp
+                    # log R(i→j) = log_target_j + log_p_i - log_target_i - log_p_j
+                    log_R = (log_target_list[j] + log_p_list[i]
+                             - log_target_list[i] - log_p_list[j])
                     log_R = np.clip(log_R, -50, 50)
                     A[i, j] = (1.0 / N) * min(1.0, np.exp(log_R))
 
@@ -1880,7 +1877,8 @@ class BenchmarkRunner:
         base_url: str = "https://api.x.ai/v1",
         output_dir: str = "predictions",
         prompt_prefix: str = "",
-        prompt_suffix: str = ""
+        prompt_suffix: str = "",
+        suffix_overrides: Optional[Dict[str, str]] = None  # Strategy name -> suffix override
     ):
         self.benchmark = benchmark
         self.model_name = model_name
@@ -1890,7 +1888,8 @@ class BenchmarkRunner:
         self.output_dir = output_dir
         self.prompt_prefix = prompt_prefix
         self.prompt_suffix = prompt_suffix
-        
+        self.suffix_overrides = suffix_overrides or {}
+
         # Create output directory
         os.makedirs(output_dir, exist_ok=True)
     
@@ -1903,15 +1902,17 @@ class BenchmarkRunner:
         """Run a single problem with a given sampling strategy."""
         # Get task ID (benchmark-specific)
         task_id = problem.get("task_id") or problem.get("id") or str(problem)
-        
+
         # Format prompt using benchmark
         prompt = self.benchmark.format_prompt(problem)
-        
+
         # Apply custom prefix/suffix if provided
+        # Check for strategy-specific suffix override
+        suffix = self.suffix_overrides.get(strategy.name, self.prompt_suffix)
         if self.prompt_prefix:
             prompt = self.prompt_prefix + prompt
-        if self.prompt_suffix:
-            prompt = prompt + self.prompt_suffix
+        if suffix:
+            prompt = prompt + suffix
         
         # Generate completion
         start_time = time.time()

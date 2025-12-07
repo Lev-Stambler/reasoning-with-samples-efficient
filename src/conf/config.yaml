@@ -47,7 +47,7 @@ model:
 benchmark:
   name: humaneval # Options: humaneval, swebench, swebench-verified, gsm8k, gsm8k-train, mmlu, mmlu-stem, mmlu-humanities, mmlu-social, arcagi2, arcagi2-train
   num_problems: 10
-  max_tokens: 2_048 # Max tokens for final completion (applied everywhere)
+  max_tokens: 1_024 # Max tokens for final completion (applied everywhere)
   seed: 42 # Random seed for reproducibility (null to disable)
 
 # Prompt customization
@@ -75,7 +75,7 @@ mcmc_parallel:
   steps: 2 # MCMC refinement steps per block (1 is typical with N parallel proposals)
   top_logprobs: 15 # Number of top log probabilities to retrieve
   proposal_temperature: 0.25 # Temperature for proposal distribution, should be alpha^(-1)
-  block_size: 400 # Block size B for block-wise generation (match mcmc.block_size)
+  block_size: 512 # Block size B for block-wise generation (match mcmc.block_size)
   debug: true # Print debug info
   length_normalize: false # If true, normalize log_target by length (removes length penalty)
   # Parallel-specific parameters:
@@ -107,6 +107,7 @@ temperature_sampling:
 # Greedy sampling configuration
 greedy:
   enabled: true
+  suffix: "\n\nThink deeply and show your work, step by step" # Text to add after the benchmark prompt
 
 # Output configuration
 output:

@@ -218,6 +218,11 @@ def main(cfg: DictConfig):
     benchmark_class = BENCHMARK_REGISTRY[cfg.benchmark.name]
     benchmark = benchmark_class()
 
+    # Build suffix overrides for strategies that have custom suffixes
+    suffix_overrides = {}
+    if cfg.greedy.get("suffix") is not None:
+        suffix_overrides["Greedy"] = cfg.greedy.suffix
+
     # Initialize runner
     runner = BenchmarkRunner(
         benchmark=benchmark,
@@ -226,7 +231,8 @@ def main(cfg: DictConfig):
         base_url=base_url,
         output_dir="predictions",
         prompt_prefix=cfg.prompt.prefix,
-        prompt_suffix=cfg.prompt.suffix
+        prompt_suffix=cfg.prompt.suffix,
+        suffix_overrides=suffix_overrides
     )
 
     # Setup strategies based on config
