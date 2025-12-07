@@ -53,9 +53,9 @@ benchmark:
 # Prompt customization
 prompt:
   prefix: "" # Text to add before the benchmark prompt
-  # suffix: "\n\nThink deeply and show your work, step by step, check your answer and output 'yes' 10 times if you are correct!" # Text to add after the benchmark prompt
+  suffix: "\n\nThink deeply and show your work, step by step, check your answer and output 'yes' 10 times if you are correct!" # Text to add after the benchmark prompt
   # suffix: "\n\nThink deeply and show your work, step by step" # Text to add after the benchmark prompt
-  suffix: ""
+  # suffix: ""
 
 # MCMC sampling configuration (serial, single proposal per step)
 mcmc:
@@ -108,8 +108,8 @@ temperature_sampling:
 # Greedy sampling configuration
 greedy:
   enabled: true
-  suffix: "" # Text to add after the benchmark prompt
-  # suffix: "\n\nThink deeply and show your work, step by step" # Text to add after the benchmark prompt
+  # suffix: "" # Text to add after the benchmark prompt
+  suffix: "\n\nThink deeply and show your work, step by step" # Text to add after the benchmark prompt
 
 # Output configuration
 output:
