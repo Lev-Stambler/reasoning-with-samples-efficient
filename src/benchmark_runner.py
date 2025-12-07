@@ -385,8 +385,6 @@ class Proposal:
     prompt_tokens: int
     completion_tokens: int
 
-
-
 class ParallelMCMCSampling(SamplingStrategy):
     """
     Corrected Multiple Proposals MCMC.
