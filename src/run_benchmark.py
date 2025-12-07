@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
 """
-Main script for comparing different sampling strategies on various benchmarks.
+Hydra-based script for comparing different sampling strategies on various benchmarks.
 Outputs a comprehensive comparison table.
+
+Usage:
+    python run_benchmark.py                           # Run with default config
+    python run_benchmark.py mcmc.steps=5              # Override MCMC steps
+    python run_benchmark.py mcmc.alpha=2.0            # Override MCMC alpha
+    python run_benchmark.py benchmark.num_problems=20 # More problems
+    python run_benchmark.py model.name=grok-3         # Different model
 """
 import os
-import argparse
+import hydra
+from omegaconf import DictConfig, OmegaConf
 from dotenv import load_dotenv
 from tabulate import tabulate
 from benchmark_runner import (
@@ -31,8 +39,7 @@ BENCHMARK_REGISTRY = {
 
 def print_results_table(metrics_list: list[BenchmarkMetrics]):
     """Print a formatted table of benchmark results."""
-    
-    # Prepare table data
+
     headers = [
         "Benchmark",
         "Model",
@@ -43,7 +50,7 @@ def print_results_table(metrics_list: list[BenchmarkMetrics]):
         "Avg Tokens/Problem",
         "Problems"
     ]
-    
+
     rows = []
     for metrics in metrics_list:
         rows.append([
@@ -56,21 +63,19 @@ def print_results_table(metrics_list: list[BenchmarkMetrics]):
             f"{metrics.avg_tokens_per_problem:.1f}",
             metrics.num_problems
         ])
-    
-    # Sort by pass rate (descending)
+
     rows.sort(key=lambda x: float(x[3].rstrip('%')), reverse=True)
-    
+
     benchmark_name = metrics_list[0].benchmark_name if metrics_list else "BENCHMARK"
     print("\n" + "="*110)
     print(f"{benchmark_name.upper()} BENCHMARK RESULTS")
     print("="*110)
     print(tabulate(rows, headers=headers, tablefmt="grid"))
     print("="*100)
-    
-    # Find best performing
+
     if rows:
         best = rows[0]
-        print(f"\n🏆 Best Strategy: {best[2]} with {best[3]} pass rate")
+        print(f"\nBest Strategy: {best[2]} with {best[3]} pass rate")
         print(f"   Average time: {best[4]}s | Tokens per problem: {best[6]}")
 
 
@@ -78,135 +83,109 @@ def print_summary(metrics_list: list[BenchmarkMetrics]):
     """Print a summary of key insights."""
     if not metrics_list:
         return
-    
+
     print("\n" + "="*100)
     print("SUMMARY")
     print("="*100)
-    
-    # Pass rate comparison
-    print("\n📊 Pass Rate Comparison:")
+
+    print("\nPass Rate Comparison:")
     for metrics in sorted(metrics_list, key=lambda x: x.pass_rate, reverse=True):
         bar_length = int(metrics.pass_rate / 2)
-        bar = "█" * bar_length
+        bar = "#" * bar_length
         print(f"  {metrics.strategy_name:30s} {bar} {metrics.pass_rate:.1f}%")
-    
-    # Time efficiency
-    print("\n⚡ Time Efficiency:")
+
+    print("\nTime Efficiency:")
     for metrics in sorted(metrics_list, key=lambda x: x.avg_time):
         print(f"  {metrics.strategy_name:30s} {metrics.avg_time:.2f}s avg per problem")
-    
-    # Token usage
-    print("\n🎫 Token Usage:")
+
+    print("\nToken Usage:")
     for metrics in sorted(metrics_list, key=lambda x: x.avg_tokens_per_problem):
         print(f"  {metrics.strategy_name:30s} {metrics.avg_tokens_per_problem:.0f} tokens avg per problem")
-    
+
     print("="*100 + "\n")
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Compare sampling strategies on various benchmarks"
-    )
-    parser.add_argument(
-        "--benchmark",
-        type=str,
-        default="humaneval",
-        choices=list(BENCHMARK_REGISTRY.keys()),
-        help=f"Benchmark to use (default: humaneval, available: {', '.join(BENCHMARK_REGISTRY.keys())})"
-    )
-    parser.add_argument(
-        "--model",
-        type=str,
-        default="grok-2-1212",
-        help="Model to use (default: grok-2-1212)"
-    )
-    parser.add_argument(
-        "--num-problems",
-        type=int,
-        default=10,
-        help="Number of HumanEval problems to test (default: 10)"
-    )
-    parser.add_argument(
-        "--max-tokens",
-        type=int,
-        default=512,
-        help="Maximum tokens per completion (default: 512)"
-    )
-    parser.add_argument(
-        "--strategies",
-        type=str,
-        default="greedy,mcmc,temp",
-        help="Comma-separated list of strategies: greedy,mcmc,temp (default: all)"
-    )
-    parser.add_argument(
-        "--mcmc-steps",
-        type=int,
-        default=3,
-        help="Number of MCMC steps (default: 3)"
-    )
-    parser.add_argument(
-        "--temperature",
-        type=float,
-        default=0.8,
-        help="Temperature for sampling strategies (default: 0.8)"
-    )
-    args = parser.parse_args()
-    
+def print_config(cfg: DictConfig):
+    """Print the current configuration."""
+    print("\n" + "="*60)
+    print("CONFIGURATION")
+    print("="*60)
+    print(OmegaConf.to_yaml(cfg))
+    print("="*60 + "\n")
+
+
+@hydra.main(version_base=None, config_path="conf", config_name="config")
+def main(cfg: DictConfig):
+    """Main entry point with Hydra configuration."""
+
+    if cfg.output.verbose:
+        print_config(cfg)
+
     # Check API key
     api_key = os.getenv("XAI_API_KEY")
     if not api_key:
-        print("❌ Error: Please set XAI_API_KEY environment variable")
+        print("Error: Please set XAI_API_KEY environment variable")
         print("   Get your API key from: https://console.x.ai/")
         return
-    
+
     # Initialize benchmark
-    benchmark_class = BENCHMARK_REGISTRY[args.benchmark]
+    if cfg.benchmark.name not in BENCHMARK_REGISTRY:
+        print(f"Error: Unknown benchmark '{cfg.benchmark.name}'")
+        print(f"   Available: {', '.join(BENCHMARK_REGISTRY.keys())}")
+        return
+
+    benchmark_class = BENCHMARK_REGISTRY[cfg.benchmark.name]
     benchmark = benchmark_class()
-    
+
     # Initialize runner
     runner = BenchmarkRunner(
         benchmark=benchmark,
-        model_name=args.model,
+        model_name=cfg.model.name,
         api_key=api_key,
+        base_url=cfg.model.base_url,
     )
-    
-    # Setup strategies
+
+    # Setup strategies based on config
     strategies = []
-    strategy_names = args.strategies.lower().split(',')
-    
-    if 'greedy' in strategy_names:
+
+    if cfg.greedy.enabled:
         strategies.append(GreedySampling())
-    if 'mcmc' in strategy_names:
+
+    if cfg.mcmc.enabled:
         strategies.append(MCMCSampling(
-            temperature=args.temperature,
-            mcmc_steps=args.mcmc_steps
+            alpha=cfg.mcmc.alpha,
+            mcmc_steps=cfg.mcmc.steps,
+            top_logprobs=cfg.mcmc.top_logprobs,
+            proposal_temperature=cfg.mcmc.proposal_temperature,
         ))
-    if 'temp' in strategy_names:
-        strategies.append(TemperatureSampling(temperature=args.temperature))
-    
+
+    if cfg.temperature_sampling.enabled:
+        strategies.append(TemperatureSampling(
+            temperature=cfg.temperature_sampling.temperature
+        ))
+
     if not strategies:
-        print("❌ Error: No valid strategies specified")
-        print("   Available strategies: greedy, mcmc, temp")
+        print("Error: No strategies enabled in configuration")
         return
-    
+
     # Run benchmark
     try:
         metrics_dict = runner.run_benchmark(
             strategies=strategies,
-            num_problems=args.num_problems,
-            max_tokens=args.max_tokens
+            num_problems=cfg.benchmark.num_problems,
+            max_tokens=cfg.benchmark.max_tokens
         )
-        
+
         metrics_list = list(metrics_dict.values())
-        
+
         # Display results
         print_results_table(metrics_list)
         print_summary(metrics_list)
-        
+
     except KeyboardInterrupt:
-        print("\n\n⚠️  Benchmark interrupted by user")
+        print("\n\nBenchmark interrupted by user")
     except Exception as e:
-        print(f"\n❌ Error during benchmark: {str(e)}")
+        print(f"\nError during benchmark: {str(e)}")
         import traceback
         traceback.print_exc()
 

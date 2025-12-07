@@ -25,7 +25,7 @@ def greedy_decode(client, prompt, max_tokens=512):
 
 def mcmc_sampling(client, prompt, max_tokens=512, alpha=4.0, mcmc_steps=10):
     """
-    MCMC power sampling with Metropolis-Hastings acceptance.
+    MCMC power sampling with Metropolis-Hastings acceptance and partial regeneration.
 
     Implements sampling from target π(x) = p(x)^α using proposal q(x) = p(x).
     Based on the paper "Reasoning with Sampling" (https://arxiv.org/abs/2510.14901).
@@ -33,12 +33,10 @@ def mcmc_sampling(client, prompt, max_tokens=512, alpha=4.0, mcmc_steps=10):
     Algorithm:
     - Target: π = p^α (power distribution)
     - Proposal: q = p (base model, temperature=1)
-    - Acceptance: log_r = (α-1) * [log p(x') - log p(x)]
+    - Partial regeneration: pick random position, regenerate suffix
+    - Accept/reject based on suffix log probabilities
 
     For α=4: proposals with higher log probability are 3x more likely to be accepted.
-
-    NOTE: This does NOT implement block-wise generation (B=192 in paper) or
-    partial regeneration. See llm_experiments/power_samp_utils.py for full version.
 
     Args:
         client: OpenAI client
@@ -53,65 +51,76 @@ def mcmc_sampling(client, prompt, max_tokens=512, alpha=4.0, mcmc_steps=10):
     attempts = 0
     acceptances = 0
 
-    def extract_logprobs(response):
-        """Extract log p and log target = α * log p."""
+    def extract_logprobs_with_tokens(response):
+        """Extract tokens, log p, and log target."""
         if not response.choices[0].logprobs or not response.choices[0].logprobs.content:
-            return [], []
+            return [], [], []
 
-        # API returns log p(token) - base model log probability
-        log_p = [token.logprob for token in response.choices[0].logprobs.content]
-
-        # Target distribution: π = p^α, so log π = α * log p
+        tokens = [t.token for t in response.choices[0].logprobs.content]
+        log_p = [t.logprob for t in response.choices[0].logprobs.content]
         log_target = [alpha * lp for lp in log_p]
 
-        return log_p, log_target
+        return tokens, log_p, log_target
 
-    # Initial sample from base model (proposal q = p)
+    # Initial sample from base model
     initial_response = client.chat.completions.create(
         model=GROK_MODEL,
         messages=[{"role": "user", "content": prompt}],
-        temperature=1.0,  # Sample from base model p
+        temperature=1.0,
         max_tokens=max_tokens,
         logprobs=True,
         top_logprobs=5,
     )
 
     current_text = initial_response.choices[0].message.content
-    log_p_cur, log_target_cur = extract_logprobs(initial_response)
+    tokens_cur, log_p_cur, log_target_cur = extract_logprobs_with_tokens(initial_response)
 
-    # MCMC refinement steps
+    # MCMC refinement steps with partial regeneration
     for step in range(mcmc_steps):
+        if len(tokens_cur) < 2:
+            continue
+
         attempts += 1
 
-        # Generate proposal from base model
+        # Pick random position to regenerate from
+        idx = random.randint(1, len(tokens_cur) - 1)
+        prefix = "".join(tokens_cur[:idx])
+
+        # Generate new suffix by continuing from prefix
         proposal_response = client.chat.completions.create(
             model=GROK_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=1.0,  # Sample from base model p
-            max_tokens=max_tokens,
+            messages=[
+                {"role": "user", "content": prompt},
+                {"role": "assistant", "content": prefix}  # Continue from here
+            ],
+            temperature=1.0,
+            max_tokens=max_tokens - idx,
             logprobs=True,
             top_logprobs=5,
         )
 
-        proposal_text = proposal_response.choices[0].message.content
-        log_p_prop, log_target_prop = extract_logprobs(proposal_response)
+        new_suffix = proposal_response.choices[0].message.content
+        tokens_prop, log_p_prop, log_target_prop = extract_logprobs_with_tokens(proposal_response)
 
-        # Metropolis-Hastings acceptance ratio for target π = p^α, proposal q = p
-        # log A = (α-1) * [log p(x') - log p(x)]
+        # Current suffix logprobs
+        log_p_cur_suffix = log_p_cur[idx:]
+        log_target_cur_suffix = log_target_cur[idx:]
+
+        # MH acceptance ratio for suffixes
         log_r = (
-            sum(log_target_prop) + sum(log_p_cur)
-            - sum(log_target_cur) - sum(log_p_prop)
+            sum(log_target_prop) + sum(log_p_cur_suffix)
+            - sum(log_target_cur_suffix) - sum(log_p_prop)
         )
 
-        # Accept with probability min(1, exp(log_r))
         if np.random.rand() < np.exp(log_r):
             acceptances += 1
-            current_text = proposal_text
-            log_p_cur = log_p_prop
-            log_target_cur = log_target_prop
-            print(f"  [Step {step+1}] Accepted (log_r: {log_r:.3f})")
+            current_text = prefix + new_suffix
+            tokens_cur = tokens_cur[:idx] + tokens_prop
+            log_p_cur = log_p_cur[:idx] + log_p_prop
+            log_target_cur = log_target_cur[:idx] + log_target_prop
+            print(f"  [Step {step+1}] Accepted at idx={idx} (log_r: {log_r:.3f})")
         else:
-            print(f"  [Step {step+1}] Rejected (log_r: {log_r:.3f})")
+            print(f"  [Step {step+1}] Rejected at idx={idx} (log_r: {log_r:.3f})")
 
     acceptance_ratio = acceptances / attempts if attempts > 0 else 0.0
     print(f"  Acceptance ratio: {acceptance_ratio:.2%}")
