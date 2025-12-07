@@ -84,7 +84,7 @@ mcmc_parallel:
   steps: 1 # MCMC refinement steps per block (1 is typical with N parallel proposals)
   top_logprobs: 10 # Number of top log probabilities to retrieve
   proposal_temperature: 0.1 # Temperature for proposal distribution, should be alpha^(-1)
-  block_size: 256 # Block size B for block-wise generation (match mcmc.block_size)
+  block_size: 1_024 # Block size B for block-wise generation (match mcmc.block_size)
   debug: true # Print debug info
   use_length_penalty: false # Whether to apply length normalization
   length_penalty: 0.6 # Length penalty exponent (like beam search)
