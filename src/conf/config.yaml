@@ -38,8 +38,8 @@ model:
   # Start server: vllm serve Qwen/Qwen3-8B --port 8000
   # vLLM provides: real logprobs, n parameter support, true GPU batching
   vllm:
-    # name: Qwen/Qwen3-8B
-    name: HuggingFaceTB/SmolLM2-1.7B-Instruct
+    name: Qwen/Qwen3-8B
+    # name: HuggingFaceTB/SmolLM2-1.7B-Instruct
     # name: HuggingFaceTB/SmolLM2-135M-Instruct
     base_url: http://localhost:8000/v1
 
