@@ -29,7 +29,7 @@ mcmc:
 
 # Temperature sampling configuration
 temperature_sampling:
-  enabled: true
+  enabled: false
   temperature: 0.8
 
 # Greedy sampling configuration
