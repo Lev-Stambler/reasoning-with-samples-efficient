@@ -108,6 +108,7 @@ class SamplingStrategy:
 
     # Optional tokenizer for apply_chat_template - set via set_tokenizer()
     _tokenizer = None
+    _tokenizer_model_name = None  # Track which model the tokenizer is for
 
     @classmethod
     def set_tokenizer(cls, tokenizer):
@@ -121,10 +122,38 @@ class SamplingStrategy:
         """
         cls._tokenizer = tokenizer
 
+    @classmethod
+    def set_tokenizer_from_model(cls, model_name: str, trust_remote_code: bool = True):
+        """
+        Automatically load tokenizer from a HuggingFace model name.
+
+        This is called automatically when using MCMC/BeamSearch sampling strategies.
+
+        Args:
+            model_name: HuggingFace model name (e.g., "meta-llama/Llama-3.1-8B-Instruct")
+            trust_remote_code: Whether to trust remote code for custom tokenizers
+        """
+        # Skip if we already have a tokenizer for this model
+        if cls._tokenizer is not None and cls._tokenizer_model_name == model_name:
+            return
+
+        try:
+            from transformers import AutoTokenizer
+            cls._tokenizer = AutoTokenizer.from_pretrained(
+                model_name,
+                trust_remote_code=trust_remote_code
+            )
+            cls._tokenizer_model_name = model_name
+            print(f"[SamplingStrategy] Loaded tokenizer for {model_name}")
+        except Exception as e:
+            print(f"[SamplingStrategy] Warning: Could not load tokenizer for {model_name}: {e}")
+            print(f"[SamplingStrategy] You may need to manually call SamplingStrategy.set_tokenizer()")
+            raise
+
     def __init__(self, name: str):
         self.name = name
 
-    def _apply_chat_template(self, prompt: str, prefix: str = "") -> str:
+    def _apply_chat_template(self, prompt: str, prefix: str = "", model_name: str = None) -> str:
         """
         Apply chat template for raw completions API.
 
@@ -133,12 +162,18 @@ class SamplingStrategy:
         For continuations, prefix is appended after the generation prompt.
         NO closing tag - model continues from exactly where prefix ends.
         """
+        # Auto-load tokenizer if model_name provided and no tokenizer set
+        if self._tokenizer is None and model_name:
+            self.set_tokenizer_from_model(model_name)
+
         if self._tokenizer is None:
             raise RuntimeError(
-                "No tokenizer set. Call SamplingStrategy.set_tokenizer(tokenizer) first.\n"
+                "No tokenizer set. Call SamplingStrategy.set_tokenizer_from_model(model_name) first.\n"
                 "Example:\n"
+                "  SamplingStrategy.set_tokenizer_from_model('meta-llama/Llama-3.1-8B-Instruct')\n"
+                "Or manually:\n"
                 "  from transformers import AutoTokenizer\n"
-                "  tokenizer = AutoTokenizer.from_pretrained('HuggingFaceTB/SmolLM2-1.7B-Instruct')\n"
+                "  tokenizer = AutoTokenizer.from_pretrained('meta-llama/Llama-3.1-8B-Instruct')\n"
                 "  SamplingStrategy.set_tokenizer(tokenizer)"
             )
         # Use tokenizer's chat template
@@ -725,17 +760,20 @@ class ParallelMCMCSampling(SamplingStrategy):
         log_target_list = []
         valid = []
         for p in proposals:
-            if len(p.tokens) >= ref_len:
-                lp = sum(p.log_p[:ref_len])
-                lt = sum(p.log_target[:ref_len])  # log_target = α * log_p
-                valid.append(True)
-            else:
-                # Proposal too short - mark as invalid
-                lp = 0.0  # Placeholder, won't be used
-                lt = 0.0
-                valid.append(False)
-            log_p_list.append(lp)
-            log_target_list.append(lt)
+            log_p_list.append(sum(p.log_p))
+            log_target_list.append(sum(p.log_target))
+            if False:
+                if len(p.tokens) >= ref_len:
+                    lp = sum(p.log_p[:ref_len])
+                    lt = sum(p.log_target[:ref_len])  # log_target = α * log_p
+                    valid.append(True)
+                else:
+                    # Proposal too short - mark as invalid
+                    lp = 0.0  # Placeholder, won't be used
+                    lt = 0.0
+                    valid.append(False)
+                log_p_list.append(lp)
+                log_target_list.append(lt)
 
         # Compute transition matrix using MH ratio (matching serial MCMC)
         for i in range(N):
@@ -1534,6 +1572,9 @@ class BenchmarkRunner:
 
         # Create output directory
         os.makedirs(output_dir, exist_ok=True)
+
+        # Auto-load tokenizer for MCMC/BeamSearch strategies
+        SamplingStrategy.set_tokenizer_from_model(model_name)
     
     def run_single_problem(
         self,
