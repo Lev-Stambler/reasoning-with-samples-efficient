@@ -37,6 +37,7 @@ from mmlu_benchmark import (
     MMLUHumanitiesBenchmark,
     MMLUSocialSciencesBenchmark
 )
+from arcagi2_benchmark import ARCAGI2Benchmark, ARCAGI2TrainingBenchmark
 
 # Load environment variables
 load_dotenv()
@@ -52,6 +53,8 @@ BENCHMARK_REGISTRY = {
     "mmlu-stem": MMLUSTEMBenchmark,  # MMLU STEM subjects only
     "mmlu-humanities": MMLUHumanitiesBenchmark,  # MMLU Humanities subjects only
     "mmlu-social": MMLUSocialSciencesBenchmark,  # MMLU Social Sciences subjects only
+    "arcagi2": ARCAGI2Benchmark,  # ARC-AGI-2 evaluation set (120 tasks)
+    "arcagi2-train": ARCAGI2TrainingBenchmark,  # ARC-AGI-2 training set (1,000 tasks)
 }
 
 

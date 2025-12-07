@@ -12,24 +12,24 @@ model:
 
 # Benchmark configuration
 benchmark:
-  name: humaneval  # Options: humaneval, swebench, swebench-verified, gsm8k, mmlu
+  name: humaneval  # Options: humaneval, swebench, swebench-verified, gsm8k, gsm8k-train, mmlu, mmlu-stem, mmlu-humanities, mmlu-social, arcagi2, arcagi2-train
   num_problems: 10
-  max_tokens: 4_096  # Max tokens for final completion (applied everywhere)
+  max_tokens: 2_048  # Max tokens for final completion (applied everywhere)
 
 # Prompt customization
 prompt:
   prefix: ""  # Text to add before the benchmark prompt
-  suffix: "\n\nThink deeply and show your work, step by step"  # Text to add after the benchmark prompt
+  suffix: "\n\nThink deeply and show your work, step by step, check your answer and output 'yes' 10 times if you are correct!"  # Text to add after the benchmark prompt
 
 # MCMC sampling configuration (serial, single proposal per step)
 mcmc:
   enabled: true
   alpha: 4.0                    # Power factor for target distribution pi(x) = p(x)^alpha
-  steps: 5                      # Number of MCMC refinement steps
+  steps: 10                      # Number of MCMC refinement steps
   top_logprobs: 5              # Number of top log probabilities to retrieve
   proposal_temperature: 0.25    # Temperature for proposal distribution, should be alpha^(-1)
   restrict_to_last_n: null      # Only resample last N blocks (null = disabled, int = enabled)
-  block_size: 128                # Block size B for block-wise generation (paper default)
+  block_size: 256               # Block size B for block-wise generation (paper default)
   debug: true                   # Print debug info during MCMC (acceptance/rejection, log_r, etc.)
 
 # Parallel MCMC sampling configuration (multiple proposals per step)
@@ -40,8 +40,9 @@ mcmc_parallel:
   steps: 1                       # MCMC refinement steps per block (1 is typical with N parallel proposals)
   top_logprobs: 5                # Number of top log probabilities to retrieve
   proposal_temperature: 0.5     # Temperature for proposal distribution, should be alpha^(-1)
-  block_size: 128                 # Block size B for block-wise generation (match mcmc.block_size)
+  block_size: 256                 # Block size B for block-wise generation (match mcmc.block_size)
   debug: true                    # Print debug info
+  length_normalize: false        # If true, normalize log_target by length (removes length penalty)
   # Parallel-specific parameters:
   num_proposals: 10               # N proposals per MCMC step (includes current state)
   max_concurrent: 100             # Max concurrent API requests
