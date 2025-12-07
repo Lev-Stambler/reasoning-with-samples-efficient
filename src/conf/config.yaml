@@ -29,8 +29,16 @@ model:
   # Install: pip install vllm
   # Start server: vllm serve HuggingFaceTB/SmolLM2-1.7B-Instruct --port 8000
   # vLLM provides: real logprobs, n parameter support, true GPU batching
+  # vllm:
+  #   name: HuggingFaceTB/SmolLM2-1.7B-Instruct
+  #   base_url: http://localhost:8000/v1
+
+  # vLLM settings (used when provider: vllm)
+  # Install: pip install vllm
+  # Start server: vllm serve Qwen/Qwen3-8B --port 8000
+  # vLLM provides: real logprobs, n parameter support, true GPU batching
   vllm:
-    name: HuggingFaceTB/SmolLM2-1.7B-Instruct
+    name: Qwen/Qwen3-8B
     base_url: http://localhost:8000/v1
 
 # Benchmark configuration
