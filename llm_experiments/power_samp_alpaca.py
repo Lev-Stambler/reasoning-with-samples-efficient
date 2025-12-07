@@ -127,7 +127,7 @@ if __name__ == "__main__":
     start = 58*args.batch_idx
     end = min(58*(args.batch_idx+1), N)
 
-    for problem, data in tqdm(enumerate(dataset[start:end]), desc = "Benchmark on ALPACA"):
+    for problem, data in tqdm(enumerate(dataset.select(range(start, min(end, len(dataset))))), desc = "Benchmark on ALPACA"):
         source = data["dataset"]
         instruction = data["instruction"]
         generator = model

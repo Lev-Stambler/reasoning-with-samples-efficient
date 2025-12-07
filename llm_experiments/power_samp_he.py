@@ -64,14 +64,14 @@ if __name__ == "__main__":
         dataset = load_dataset("openai/openai_humaneval", split="test")
 
     print("dataset done")
-    hf_model, tokenizer, autoreg_sampler = load_model_and_tokenizer(model, device, local_files_only=True, trust_remote_code=False)
+    hf_model, tokenizer, autoreg_sampler = load_model_and_tokenizer(model, device, local_files_only=False, trust_remote_code=False)
     print("loaded models")
     results = []
 
     start = 41*args.batch_idx
     end = 41*(args.batch_idx+1)
 
-    for problem, data in tqdm(enumerate(dataset[start:end]), desc = "Benchmark on HumanEval"):
+    for problem, data in tqdm(enumerate(dataset.select(range(start, min(end, len(dataset))))), desc = "Benchmark on HumanEval"):
         prompt = data["prompt"]
         task_id = data["task_id"]
 
