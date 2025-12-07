@@ -1,5 +1,6 @@
 import os
 import random
+import numpy as np
 from openai import OpenAI
 from dotenv import load_dotenv
 from datasets import load_dataset
@@ -22,55 +23,100 @@ def greedy_decode(client, prompt, max_tokens=512):
     return response.choices[0].message.content
 
 
-def mcmc_sampling(client, prompt, max_tokens=512, temperature=0.8, mcmc_steps=3):
+def mcmc_sampling(client, prompt, max_tokens=512, alpha=4.0, mcmc_steps=10):
     """
-    MCMC-inspired sampling: generate multiple samples and accept/reject.
-    Simulates MCMC by generating variants and comparing their likelihoods.
+    MCMC power sampling with Metropolis-Hastings acceptance.
+
+    Implements sampling from target π(x) = p(x)^α using proposal q(x) = p(x).
+    Based on the paper "Reasoning with Sampling" (https://arxiv.org/abs/2510.14901).
+
+    Algorithm:
+    - Target: π = p^α (power distribution)
+    - Proposal: q = p (base model, temperature=1)
+    - Acceptance: log_r = (α-1) * [log p(x') - log p(x)]
+
+    For α=4: proposals with higher log probability are 3x more likely to be accepted.
+
+    NOTE: This does NOT implement block-wise generation (B=192 in paper) or
+    partial regeneration. See llm_experiments/power_samp_utils.py for full version.
+
+    Args:
+        client: OpenAI client
+        prompt: Input prompt
+        max_tokens: Maximum tokens to generate
+        alpha: Power for target distribution p^α (default 4.0)
+        mcmc_steps: Number of MCMC refinement steps (default 10)
+
+    Returns:
+        tuple: (text, log_p, log_target, acceptance_ratio)
     """
-    # Initial sample with temperature
+    attempts = 0
+    acceptances = 0
+
+    def extract_logprobs(response):
+        """Extract log p and log target = α * log p."""
+        if not response.choices[0].logprobs or not response.choices[0].logprobs.content:
+            return [], []
+
+        # API returns log p(token) - base model log probability
+        log_p = [token.logprob for token in response.choices[0].logprobs.content]
+
+        # Target distribution: π = p^α, so log π = α * log p
+        log_target = [alpha * lp for lp in log_p]
+
+        return log_p, log_target
+
+    # Initial sample from base model (proposal q = p)
     initial_response = client.chat.completions.create(
         model=GROK_MODEL,
         messages=[{"role": "user", "content": prompt}],
-        temperature=temperature,
+        temperature=1.0,  # Sample from base model p
         max_tokens=max_tokens,
         logprobs=True,
         top_logprobs=5,
     )
-    
+
     current_text = initial_response.choices[0].message.content
-    current_logprob = sum([
-        token.logprob for token in initial_response.choices[0].logprobs.content
-    ]) if initial_response.choices[0].logprobs else 0
-    
+    log_p_cur, log_target_cur = extract_logprobs(initial_response)
+
     # MCMC refinement steps
     for step in range(mcmc_steps):
-        # Generate alternative sample
+        attempts += 1
+
+        # Generate proposal from base model
         proposal_response = client.chat.completions.create(
             model=GROK_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            temperature=temperature * 1.2,  # Slightly higher temp for exploration
+            temperature=1.0,  # Sample from base model p
             max_tokens=max_tokens,
             logprobs=True,
             top_logprobs=5,
         )
-        
+
         proposal_text = proposal_response.choices[0].message.content
-        proposal_logprob = sum([
-            token.logprob for token in proposal_response.choices[0].logprobs.content
-        ]) if proposal_response.choices[0].logprobs else 0
-        
-        # Metropolis-Hastings acceptance
-        log_ratio = proposal_logprob - current_logprob
-        accept_prob = min(1.0, 2.718 ** log_ratio)  # exp(log_ratio)
-        
-        if random.random() < accept_prob:
+        log_p_prop, log_target_prop = extract_logprobs(proposal_response)
+
+        # Metropolis-Hastings acceptance ratio for target π = p^α, proposal q = p
+        # log A = (α-1) * [log p(x') - log p(x)]
+        log_r = (
+            sum(log_target_prop) + sum(log_p_cur)
+            - sum(log_target_cur) - sum(log_p_prop)
+        )
+
+        # Accept with probability min(1, exp(log_r))
+        if np.random.rand() < np.exp(log_r):
+            acceptances += 1
             current_text = proposal_text
-            current_logprob = proposal_logprob
-            print(f"  [Step {step+1}] Accepted (log_ratio: {log_ratio:.3f})")
+            log_p_cur = log_p_prop
+            log_target_cur = log_target_prop
+            print(f"  [Step {step+1}] Accepted (log_r: {log_r:.3f})")
         else:
-            print(f"  [Step {step+1}] Rejected (log_ratio: {log_ratio:.3f})")
-    
-    return current_text
+            print(f"  [Step {step+1}] Rejected (log_r: {log_r:.3f})")
+
+    acceptance_ratio = acceptances / attempts if attempts > 0 else 0.0
+    print(f"  Acceptance ratio: {acceptance_ratio:.2%}")
+
+    return current_text, log_p_cur, log_target_cur, acceptance_ratio
 
 
 def run_comparison(num_problems=3):
@@ -108,7 +154,9 @@ def run_comparison(num_problems=3):
         
         # MCMC sampling
         print("\n[MCMC SAMPLING]")
-        mcmc_output = mcmc_sampling(client, prompt, max_tokens=512, temperature=0.8, mcmc_steps=3)
+        mcmc_output, _, _, acceptance_ratio = mcmc_sampling(
+            client, prompt, max_tokens=512, alpha=4.0, mcmc_steps=10
+        )
         print(mcmc_output[:300] + "..." if len(mcmc_output) > 300 else mcmc_output)
         
         # Show if outputs differ
