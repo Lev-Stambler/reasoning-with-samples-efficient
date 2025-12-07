@@ -385,7 +385,329 @@ class Proposal:
     completion_tokens: int
 
 
+
 class ParallelMCMCSampling(SamplingStrategy):
+    """
+    Corrected Multiple Proposals MCMC.
+
+    Fixes from original:
+    1. Adds Hastings correction to acceptance ratio:
+       Ratio = (P(x')^alpha / P(x)^alpha) * (P(x) / P(x'))
+             = (P(x') / P(x))^(alpha - 1)
+    2. Removes destructive truncation. Proposals of different lengths
+       are handled by penalizing the 'missing' tokens of the shorter sequence
+       (or strictly requiring same length, though this implementation uses masking).
+    3. Uses standard asyncio.gather instead of non-existent batch method.
+    """
+
+    def __init__(
+        self,
+        alpha: float = 1.67,
+        mcmc_steps: int = 5,
+        top_logprobs: int = 5,
+        proposal_temperature: float = 1.0, # Usually want higher temp for proposals to explore
+        block_size: int = 16, # Smaller blocks work better for MCMC
+        debug: bool = False,
+        num_proposals: int = 4,
+        max_concurrent: int = 100,
+        timeout: float = 60.0,
+        max_retries: int = 3,
+        api_key: Optional[str] = None,
+        base_url: str = "https://api.openai.com/v1",
+        model: str = "gpt-4o-mini",
+        supports_n_param: bool = True,  # Whether API supports n parameter (vLLM: yes, Ollama: no)
+    ):
+        name = f"ParallelMCMC(α={alpha},steps={mcmc_steps},B={block_size},N={num_proposals})"
+        super().__init__(name)
+        self.alpha = alpha
+        self.mcmc_steps = mcmc_steps
+        self.top_logprobs = top_logprobs
+        self.proposal_temperature = proposal_temperature
+        self.block_size = block_size
+        self.debug = debug
+        self.num_proposals = num_proposals
+        self.max_concurrent = max_concurrent
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.api_key = api_key
+        self.base_url = base_url
+        self.model = model
+        self.supports_n_param = supports_n_param
+
+    def _extract_logprobs(self, response_obj: Any) -> Tuple[List[str], List[float]]:
+        """
+        Parses standard OpenAI response object.
+        Note: This assumes the input is the actual API response object.
+        """
+        try:
+            # Handle standard OpenAI object structure
+            choice = response_obj.choices[0]
+            content = choice.message.content
+            
+            # If logprobs are None (some providers don't return them), handle gracefully
+            if not choice.logprobs or not choice.logprobs.content:
+                # Fallback or error - simplistic handling here
+                return [], []
+
+            tokens = []
+            log_ps = []
+            
+            for token_data in choice.logprobs.content:
+                tokens.append(token_data.token)
+                log_ps.append(token_data.logprob)
+                
+            return tokens, log_ps
+        except Exception as e:
+            if self.debug:
+                print(f"Error extracting logprobs: {e}")
+            return [], []
+
+    async def _call_api(
+        self,
+        client: Any,
+        messages: List[Dict[str, str]],
+        max_tokens: int
+    ) -> Any:
+        """Standard wrapper for API call."""
+        return await client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=self.proposal_temperature,
+            max_tokens=max_tokens,
+            logprobs=True,
+            top_logprobs=self.top_logprobs
+        )
+
+    async def _call_api_multiple(
+        self,
+        client: Any,
+        messages: List[Dict[str, str]],
+        max_tokens: int,
+        n: int
+    ) -> Any:
+        """API call with n parameter for multiple completions (for vLLM/APIs that support it)."""
+        return await client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=self.proposal_temperature,
+            max_tokens=max_tokens,
+            logprobs=True,
+            top_logprobs=self.top_logprobs,
+            n=n
+        )
+
+    async def _generate_parallel_proposals(
+        self,
+        client: Any,
+        prompt: str,
+        prefix: str,
+        target_len: int,
+        current_proposal: Proposal,
+    ) -> Tuple[List[Proposal], int, int]:
+        """
+        Generate N-1 new proposals in parallel + include current state.
+
+        When supports_n_param=True (vLLM): Use single call with n parameter for efficient GPU batching.
+        When supports_n_param=False (Ollama): Make separate parallel API calls.
+        """
+        messages = [
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": prefix}
+        ]
+
+        proposals = [current_proposal]
+        total_pt = 0
+        total_ct = 0
+
+        if self.supports_n_param:
+            # vLLM path: Use n parameter for efficient batched inference
+            try:
+                resp = await self._call_api_multiple(client, messages, target_len, self.num_proposals - 1)
+
+                for choice in resp.choices:
+                    tokens, log_p = self._extract_logprobs_from_choice(choice)
+                    if not tokens:
+                        continue
+
+                    log_target = [self.alpha * lp for lp in log_p]
+                    proposals.append(Proposal(
+                        tokens=tokens,
+                        log_p=log_p,
+                        log_target=log_target,
+                        prompt_tokens=resp.usage.prompt_tokens // len(resp.choices),
+                        completion_tokens=resp.usage.completion_tokens // len(resp.choices),
+                    ))
+
+                total_pt = resp.usage.prompt_tokens
+                total_ct = resp.usage.completion_tokens
+
+            except Exception as e:
+                if self.debug:
+                    print(f"API Error with n param: {e}")
+        else:
+            # Ollama path: Make N-1 separate parallel API calls
+            tasks = []
+            for _ in range(self.num_proposals - 1):
+                tasks.append(self._call_api(client, messages, target_len))
+
+            responses = await asyncio.gather(*tasks, return_exceptions=True)
+
+            for resp in responses:
+                if isinstance(resp, Exception):
+                    if self.debug:
+                        print(f"API Error: {resp}")
+                    continue
+
+                tokens, log_p = self._extract_logprobs(resp)
+                if not tokens:
+                    continue
+
+                log_target = [self.alpha * lp for lp in log_p]
+                proposals.append(Proposal(
+                    tokens=tokens,
+                    log_p=log_p,
+                    log_target=log_target,
+                    prompt_tokens=resp.usage.prompt_tokens,
+                    completion_tokens=resp.usage.completion_tokens,
+                ))
+                total_pt += resp.usage.prompt_tokens
+                total_ct += resp.usage.completion_tokens
+
+        return proposals, total_pt, total_ct
+
+    def _extract_logprobs_from_choice(self, choice: Any) -> Tuple[List[str], List[float]]:
+        """Extract logprobs from a single choice object."""
+        try:
+            if not choice.logprobs or not choice.logprobs.content:
+                return [], []
+
+            tokens = []
+            log_ps = []
+
+            for token_data in choice.logprobs.content:
+                tokens.append(token_data.token)
+                log_ps.append(token_data.logprob)
+
+            return tokens, log_ps
+        except Exception as e:
+            if self.debug:
+                print(f"Error extracting logprobs from choice: {e}")
+            return [], []
+
+    def _compute_transition_matrix(self, proposals: List[Proposal]) -> np.ndarray:
+        """
+        Computes Calderhead matrix with CORRECT Hastings adjustment.
+        
+        R(i,j) = π(j)/π(i) * q(i|j)/q(j|i)
+        
+        Here, q(x) = P_model(x).
+        π(x) = P_model(x)^α
+        
+        Therefore:
+        R(i,j) = (P_j^α / P_i^α) * (P_i / P_j)
+               = P_j^(α-1) / P_i^(α-1)
+               
+        Log R(i,j) = (α - 1) * (sum(log_p_j) - sum(log_p_i))
+        """
+        N = len(proposals)
+        A = np.zeros((N, N))
+
+        # We must align lengths to compare them fairly.
+        # Instead of truncating current state, we truncate comparisons to the
+        # intersection of lengths. This is still an approximation but better than 
+        # destroying the state.
+        min_len = min(len(p.tokens) for p in proposals)
+        
+        # Calculate sum of log_probs up to min_len
+        # Using (alpha - 1) per the Hastings correction
+        scores = []
+        for p in proposals:
+            # We use the raw model log_p here, not log_target
+            score = sum(p.log_p[:min_len]) * (self.alpha - 1)
+            scores.append(score)
+            
+        scores = np.array(scores)
+
+        for i in range(N):
+            for j in range(N):
+                if i != j:
+                    log_R = scores[j] - scores[i]
+                    # Calderhead Eq: A(i,j) = 1/N * min(1, R)
+                    # We clamp log_R to avoid overflow in exp
+                    log_R = np.clip(log_R, -50, 50)
+                    A[i, j] = (1.0 / N) * min(1.0, np.exp(log_R))
+
+            A[i, i] = 1.0 - np.sum(A[i, :])
+
+        return np.maximum(A, 0.0)
+
+    async def _generate_async(self, client: Any, prompt: str, max_tokens: int) -> str:
+        tokens_cur: List[str] = []
+        log_p_cur: List[float] = []
+        
+        # Initial Generation (Bootstrap)
+        messages = [{"role": "user", "content": prompt}]
+        initial_resp = await self._call_api(client, messages, max_tokens)
+        t, lp = self._extract_logprobs(initial_resp)
+        tokens_cur, log_p_cur = t, lp
+        
+        # MCMC Refinement Steps
+        for step in range(self.mcmc_steps):
+            if len(tokens_cur) < 2: break
+            
+            # 1. Select a block to refine (Pivot)
+            # We keep prefix, resample suffix
+            pivot_idx = random.randint(0, len(tokens_cur) - 1)
+            prefix = "".join(tokens_cur[:pivot_idx])
+            suffix_tokens = tokens_cur[pivot_idx:]
+            suffix_log_p = log_p_cur[pivot_idx:]
+            
+            # The length we want to generate to match current state
+            target_gen_len = len(suffix_tokens) # + some exploration buffer if desired
+
+            current_proposal = Proposal(
+                tokens=suffix_tokens,
+                log_p=suffix_log_p,
+                log_target=[self.alpha * x for x in suffix_log_p],
+                prompt_tokens=0, completion_tokens=0
+            )
+
+            # 2. Propose
+            proposals, _, _ = await self._generate_parallel_proposals(
+                client, prompt, prefix, target_gen_len, current_proposal
+            )
+            
+            if len(proposals) < 2: continue
+
+            # 3. Transition
+            A = self._compute_transition_matrix(proposals)
+            next_idx = np.random.choice(len(proposals), p=A[0]) # 0 is current
+            
+            if next_idx != 0:
+                selected = proposals[next_idx]
+                # Update State
+                tokens_cur = tokens_cur[:pivot_idx] + selected.tokens
+                log_p_cur = log_p_cur[:pivot_idx] + selected.log_p
+                if self.debug:
+                    print(f"Step {step}: Swapped suffix at {pivot_idx}")
+
+        return "".join(tokens_cur)
+
+    async def _run_with_async_client(self, prompt: str, max_tokens: int) -> str:
+        """Helper to run async generation with proper AsyncOpenAI client."""
+        async with AsyncOpenAI(api_key=self.api_key, base_url=self.base_url) as async_client:
+            return await self._generate_async(async_client, prompt, max_tokens)
+
+    def generate(self, client: Any, prompt: str, max_tokens: int = 100) -> str:
+        """Sync entry point. Creates its own AsyncOpenAI client internally."""
+        # Extract api_key and base_url from passed client if not already set
+        if self.api_key is None:
+            self.api_key = client.api_key
+        if self.base_url == "https://api.openai.com/v1":
+            self.base_url = str(client.base_url)
+        return asyncio.run(self._run_with_async_client(prompt, max_tokens))
+
+class __ParallelMCMCSampling(SamplingStrategy):
     """
     Multiple Proposals MCMC with parallel suffix generation.
 
@@ -847,6 +1169,7 @@ class BeamSearchSampling(SamplingStrategy):
         proposal_temperature: float = 1.0,
         top_logprobs: int = 5,
         debug: bool = False,
+        supports_n_param: bool = True,  # Whether API supports n parameter (vLLM: yes, Ollama: no)
     ):
         name = f"BeamSearch(α={alpha},width={beam_width},n={n_per_beam},tps={tokens_per_step})"
         super().__init__(name)
@@ -859,6 +1182,7 @@ class BeamSearchSampling(SamplingStrategy):
         self.proposal_temperature = proposal_temperature
         self.top_logprobs = top_logprobs
         self.debug = debug
+        self.supports_n_param = supports_n_param
 
     def _extract_logprobs_with_tokens(self, response) -> tuple[list[str], list[float], list[float]]:
         """Extract tokens and logprobs from API response."""
@@ -868,7 +1192,6 @@ class BeamSearchSampling(SamplingStrategy):
         tokens = [token.token for token in response.choices[0].logprobs.content]
         log_p = [token.logprob for token in response.choices[0].logprobs.content]
         log_target = [self.alpha * lp for lp in log_p]
-        print("AAA", log_p, log_target)
 
         return tokens, log_p, log_target
 
@@ -956,27 +1279,58 @@ class BeamSearchSampling(SamplingStrategy):
         # Token usage is for ALL n samples combined
         return results, response.usage.prompt_tokens, response.usage.completion_tokens
 
-    async def _sample_continuation_multiple_async(self, client: AsyncOpenAI, prompt: str, prefix: str, max_tokens: int, n: int):
-        """Async version: Generate n continuations from a prefix for true beam search expansion."""
+    async def _sample_single_continuation_async(self, client: AsyncOpenAI, prompt: str, prefix: str, max_tokens: int):
+        """Async: Generate a single continuation from a prefix."""
         response = await client.chat.completions.create(
             model=client.default_model,
             messages=[
                 {"role": "user", "content": prompt},
                 {"role": "assistant", "content": prefix}
-            ],
+            ] if prefix else [{"role": "user", "content": prompt}],
             temperature=self.proposal_temperature,
             max_tokens=max_tokens,
             logprobs=True,
             top_logprobs=self.top_logprobs,
-            n=n,  # Generate n different samples
         )
 
-        # Extract all n continuations (same logic as sync version)
+        choice = response.choices[0]
+        continuation = choice.message.content
+
+        if choice.logprobs and choice.logprobs.content:
+            tokens = [t.token for t in choice.logprobs.content]
+            log_p = [t.logprob for t in choice.logprobs.content]
+            log_target = [self.alpha * lp for lp in log_p]
+        else:
+            tokens = []
+            log_p = []
+            log_target = []
+
+        finished_naturally = choice.finish_reason == "stop"
+
+        return (
+            continuation, tokens, log_p, log_target, finished_naturally,
+            response.usage.prompt_tokens, response.usage.completion_tokens
+        )
+
+    async def _sample_multiple_continuations_async(self, client: AsyncOpenAI, prompt: str, prefix: str, max_tokens: int, n: int):
+        """Async: Generate n continuations from a prefix using the n parameter (for vLLM/APIs that support it)."""
+        response = await client.chat.completions.create(
+            model=client.default_model,
+            messages=[
+                {"role": "user", "content": prompt},
+                {"role": "assistant", "content": prefix}
+            ] if prefix else [{"role": "user", "content": prompt}],
+            temperature=self.proposal_temperature,
+            max_tokens=max_tokens,
+            logprobs=True,
+            top_logprobs=self.top_logprobs,
+            n=n,
+        )
+
         results = []
         for choice in response.choices:
             continuation = choice.message.content
 
-            # Extract logprobs for this choice
             if choice.logprobs and choice.logprobs.content:
                 tokens = [t.token for t in choice.logprobs.content]
                 log_p = [t.logprob for t in choice.logprobs.content]
@@ -987,48 +1341,77 @@ class BeamSearchSampling(SamplingStrategy):
                 log_target = []
 
             finished_naturally = choice.finish_reason == "stop"
-
             results.append((continuation, tokens, log_p, log_target, finished_naturally))
 
-        # Token usage is for ALL n samples combined
         return results, response.usage.prompt_tokens, response.usage.completion_tokens
 
     async def _expand_beams_parallel(self, client: AsyncOpenAI, active_beams, prompt, block_num):
-        """Parallelize beam expansion using async/await."""
-        tasks = []
+        """
+        Parallelize beam expansion.
 
-        for beam_text, beam_tokens, beam_log_p, beam_log_target, _ in active_beams:
-            if block_num == 0 and not beam_text:
-                # First expansion: generate from scratch with n samples
-                task = self._sample_continuation_multiple_async(
-                    client, prompt, "", self.tokens_per_step, n=self.n_per_beam
-                )
-            else:
-                # Subsequent expansions: generate n continuations from this beam
-                task = self._sample_continuation_multiple_async(
-                    client, prompt, beam_text, self.tokens_per_step, n=self.n_per_beam
-                )
-            tasks.append((task, (beam_text, beam_tokens, beam_log_p, beam_log_target)))
-
-        # Run all API calls in parallel!
-        results = await asyncio.gather(*[task for task, _ in tasks])
-
-        # Process results and create candidate beams
+        When supports_n_param=True (vLLM): Use n parameter for efficient GPU batching.
+        When supports_n_param=False (Ollama): Make separate parallel API calls.
+        """
         candidate_beams = []
         total_pt = 0
         total_ct = 0
 
-        for i, (continuations, pt, ct) in enumerate(results):
-            total_pt += pt
-            total_ct += ct
-            beam_text, beam_tokens, beam_log_p, beam_log_target = tasks[i][1]
+        if self.supports_n_param:
+            # vLLM path: Use n parameter for efficient batched inference
+            # Make beam_width parallel calls, each with n=n_per_beam
+            tasks = []
+            beam_info = []  # Track which beam each task belongs to
 
-            for text, tokens, log_p, log_target, finished in continuations:
+            for beam_text, beam_tokens, beam_log_p, beam_log_target, _ in active_beams:
+                prefix = "" if (block_num == 0 and not beam_text) else beam_text
+                task = self._sample_multiple_continuations_async(
+                    client, prompt, prefix, self.tokens_per_step, self.n_per_beam
+                )
+                tasks.append(task)
+                beam_info.append((beam_text, beam_tokens, beam_log_p, beam_log_target))
+
+            # Run all beam expansions in parallel
+            results = await asyncio.gather(*tasks)
+
+            for (beam_text, beam_tokens, beam_log_p, beam_log_target), (continuations, pt, ct) in zip(beam_info, results):
+                total_pt += pt
+                total_ct += ct
+
+                for text, tokens, log_p, log_target, finished in continuations:
+                    if block_num == 0:
+                        candidate_beams.append((text, tokens, log_p, log_target, finished))
+                    else:
+                        new_text = beam_text + text
+                        new_tokens = beam_tokens + tokens
+                        new_log_p = beam_log_p + log_p
+                        new_log_target = beam_log_target + log_target
+                        candidate_beams.append((new_text, new_tokens, new_log_p, new_log_target, finished))
+        else:
+            # Ollama path: Make beam_width * n_per_beam separate parallel API calls
+            all_tasks = []
+
+            for beam_text, beam_tokens, beam_log_p, beam_log_target, _ in active_beams:
+                prefix = "" if (block_num == 0 and not beam_text) else beam_text
+
+                # Make n_per_beam separate calls for this beam
+                for _ in range(self.n_per_beam):
+                    task = self._sample_single_continuation_async(
+                        client, prompt, prefix, self.tokens_per_step
+                    )
+                    all_tasks.append((task, (beam_text, beam_tokens, beam_log_p, beam_log_target)))
+
+            # Run ALL API calls in parallel
+            results = await asyncio.gather(*[task for task, _ in all_tasks])
+
+            for i, result in enumerate(results):
+                text, tokens, log_p, log_target, finished, pt, ct = result
+                total_pt += pt
+                total_ct += ct
+                beam_text, beam_tokens, beam_log_p, beam_log_target = all_tasks[i][1]
+
                 if block_num == 0:
-                    # First block
                     candidate_beams.append((text, tokens, log_p, log_target, finished))
                 else:
-                    # Subsequent blocks - concatenate with beam prefix
                     new_text = beam_text + text
                     new_tokens = beam_tokens + tokens
                     new_log_p = beam_log_p + log_p

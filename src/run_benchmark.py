@@ -182,11 +182,19 @@ def main(cfg: DictConfig):
         model_name = cfg.model.ollama.name
         base_url = cfg.model.ollama.base_url
         api_key = "ollama"  # Ollama doesn't require API key
+        supports_n_param = False  # Ollama ignores n parameter
         print(f"Using Ollama: {model_name} at {base_url}")
+    elif provider == "vllm":
+        model_name = cfg.model.vllm.name
+        base_url = cfg.model.vllm.base_url
+        api_key = "vllm"  # vLLM doesn't require API key
+        supports_n_param = True  # vLLM supports n parameter for batching
+        print(f"Using vLLM: {model_name} at {base_url}")
     else:  # xai (default)
         model_name = cfg.model.xai.name
         base_url = cfg.model.xai.base_url
         api_key = os.getenv("XAI_API_KEY")
+        supports_n_param = True  # X.AI supports n parameter
         if not api_key:
             print("Error: Please set XAI_API_KEY environment variable")
             print("   Get your API key from: https://console.x.ai/")
@@ -244,6 +252,7 @@ def main(cfg: DictConfig):
             api_key=api_key,
             base_url=base_url,
             model=model_name,
+            supports_n_param=supports_n_param,
         ))
 
     if getattr(cfg.beam_search, 'enabled', False):
@@ -257,6 +266,7 @@ def main(cfg: DictConfig):
             proposal_temperature=cfg.beam_search.proposal_temperature,
             top_logprobs=cfg.beam_search.top_logprobs,
             debug=cfg.beam_search.debug,
+            supports_n_param=supports_n_param,
         ))
 
     if getattr(cfg.temperature_sampling, 'enabled', False):

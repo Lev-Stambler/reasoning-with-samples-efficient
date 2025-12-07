@@ -6,9 +6,9 @@ defaults:
   - _self_
 
 # Model configuration
-# Provider: "xai" or "ollama"
+# Provider: "xai", "ollama", or "vllm"
 model:
-  provider: ollama # Change to "ollama" for local open-source models
+  provider: ollama  # Options: xai, ollama, vllm
 
   # X.AI settings (used when provider: xai)
   # Requires XAI_API_KEY environment variable
@@ -20,21 +20,30 @@ model:
   # Install: curl -fsSL https://ollama.com/install.sh | sh
   # Pull model: ollama pull smollm2:1.7b
   # Ollama provides proper logprobs at all temperatures (unlike X.AI)
+  # Note: Ollama ignores n parameter - no true GPU batching
   ollama:
     name: smollm2:1.7b
     base_url: http://localhost:11434/v1
 
+  # vLLM settings (used when provider: vllm)
+  # Install: pip install vllm
+  # Start server: vllm serve HuggingFaceTB/SmolLM2-1.7B-Instruct --port 8000
+  # vLLM provides: real logprobs, n parameter support, true GPU batching
+  vllm:
+    name: HuggingFaceTB/SmolLM2-1.7B-Instruct
+    base_url: http://localhost:8000/v1
+
 # Benchmark configuration
 benchmark:
   name: humaneval # Options: humaneval, swebench, swebench-verified, gsm8k, gsm8k-train, mmlu, mmlu-stem, mmlu-humanities, mmlu-social, arcagi2, arcagi2-train
-  num_problems: 10
+  num_problems: 30
   max_tokens: 2_048 # Max tokens for final completion (applied everywhere)
 
 # Prompt customization
 prompt:
   prefix: "" # Text to add before the benchmark prompt
-  suffix: "\n\nThink deeply and show your work, step by step, check your answer and output 'yes' 10 times if you are correct!" # Text to add after the benchmark prompt
-  # suffix: ""
+  # suffix: "\n\nThink deeply and show your work, step by step, check your answer and output 'yes' 10 times if you are correct!" # Text to add after the benchmark prompt
+  suffix: ""
 
 # MCMC sampling configuration (serial, single proposal per step)
 mcmc:
@@ -55,7 +64,7 @@ mcmc_parallel:
   steps: 1 # MCMC refinement steps per block (1 is typical with N parallel proposals)
   top_logprobs: 5 # Number of top log probabilities to retrieve
   proposal_temperature: 0.5 # Temperature for proposal distribution, should be alpha^(-1)
-  block_size: 256 # Block size B for block-wise generation (match mcmc.block_size)
+  block_size: 128 # Block size B for block-wise generation (match mcmc.block_size)
   debug: true # Print debug info
   length_normalize: false # If true, normalize log_target by length (removes length penalty)
   # Parallel-specific parameters:
@@ -69,8 +78,8 @@ beam_search:
   enabled: false
   alpha: 2.0 # Power factor for target distribution pi(x) = p(x)^alpha
   beam_width: 5 # Number of parallel beams to maintain (top-k after pruning)
-  n_per_beam: 5 # Generate n continuations per beam (enables true beam search)
-  tokens_per_step: 64 # Generate this many tokens per expansion
+  n_per_beam: 3 # Generate n continuations per beam (enables true beam search)
+  tokens_per_step: 256 # Generate this many tokens per expansion
   use_length_penalty: false # Whether to apply length normalization (set false to disable)
   length_penalty: 0.0 # Length normalization exponent (0.6 = Google NMT, only used if use_length_penalty=true)
   proposal_temperature: 0.5 # Temperature for proposal distribution
