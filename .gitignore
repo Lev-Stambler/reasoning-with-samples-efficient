@@ -47,3 +47,4 @@ env/
 *.bin
 *.safetensors
 models/
+.sync-to-remote.sh
