@@ -58,13 +58,16 @@ Edit `src/conf/config.yaml` or override via command line:
 beam_search:
   enabled: false           # Set to true to use
   alpha: 4.0              # Power factor (π(x) = p(x)^α)
-  beam_width: 5           # Number of parallel beams
+  beam_width: 5           # Keep top-5 beams after pruning
+  n_per_beam: 5           # Generate 5 continuations per beam (TRUE beam search!)
   tokens_per_step: 192    # Tokens per expansion
   length_penalty: 0.6     # Length normalization
   proposal_temperature: 1.0
   top_logprobs: 5
   debug: false            # Verbose output
 ```
+
+**Note**: With `beam_width=5` and `n_per_beam=5`, each iteration generates **25 candidates** (5 beams × 5 samples), then prunes to the **top 5 beams**. This is TRUE beam search with proper branching!
 
 ## Quick Parameter Guide
 
@@ -98,12 +101,20 @@ uv run --python 3.12 python run_benchmark.py \
 
 - **`alpha`**: Power scaling factor (1.0-10.0, default 4.0)
   - Higher = prefer high-probability sequences more
-- **`beam_width`**: Number of parallel beams (1-20, default 5)
-  - More beams = better exploration, more API calls
+- **`beam_width`**: Number of beams to keep after pruning (1-20, default 5)
+  - Final number of parallel hypotheses
+- **`n_per_beam`**: Generate n samples per beam (1-10, default 5)
+  - Controls branching factor: beam_width × n_per_beam = total candidates
+  - Higher = better exploration but more expensive
 - **`tokens_per_step`**: Chunk size (50-512, default 192)
   - Smaller = fine-grained, more expansions
 - **`length_penalty`**: Normalization (0.0-1.0, default 0.6)
   - Higher = prefer longer sequences
+
+### Understanding n_per_beam:
+- `n_per_beam=1`: Pseudo-beam search (each beam → 1 continuation)
+- `n_per_beam=5`: TRUE beam search (each beam → 5 continuations)
+- With `beam_width=5, n_per_beam=5`: **25 candidates per iteration**, prune to top 5
 
 ## Expected Output
 

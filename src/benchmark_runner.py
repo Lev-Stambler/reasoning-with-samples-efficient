@@ -332,17 +332,19 @@ class BeamSearchSampling(SamplingStrategy):
     def __init__(
         self,
         alpha: float = 4.0,
-        beam_width: int = 5,
+        beam_width: int = 2,
+        n_per_beam: int = 2,  # Generate n continuations per beam
         tokens_per_step: int = 192,  # Generate this many tokens per expansion
         length_penalty: float = 0.6,
         proposal_temperature: float = 1.0,
         top_logprobs: int = 5,
         debug: bool = False,
     ):
-        name = f"BeamSearch(α={alpha},width={beam_width},tps={tokens_per_step})"
+        name = f"BeamSearch(α={alpha},width={beam_width},n={n_per_beam},tps={tokens_per_step})"
         super().__init__(name)
         self.alpha = alpha
         self.beam_width = beam_width
+        self.n_per_beam = n_per_beam
         self.tokens_per_step = tokens_per_step
         self.length_penalty = length_penalty
         self.proposal_temperature = proposal_temperature
@@ -383,7 +385,7 @@ class BeamSearchSampling(SamplingStrategy):
         )
     
     def _sample_continuation(self, client: OpenAI, prompt: str, prefix: str, max_tokens: int):
-        """Generate a continuation from a prefix."""
+        """Generate a single continuation from a prefix."""
         response = client.chat.completions.create(
             model=client.default_model,
             messages=[
@@ -407,6 +409,43 @@ class BeamSearchSampling(SamplingStrategy):
             finished_naturally
         )
     
+    def _sample_continuation_multiple(self, client: OpenAI, prompt: str, prefix: str, max_tokens: int, n: int):
+        """Generate n continuations from a prefix for true beam search expansion."""
+        response = client.chat.completions.create(
+            model=client.default_model,
+            messages=[
+                {"role": "user", "content": prompt},
+                {"role": "assistant", "content": prefix}
+            ],
+            temperature=self.proposal_temperature,
+            max_tokens=max_tokens,
+            logprobs=True,
+            top_logprobs=self.top_logprobs,
+            n=n,  # Generate n different samples
+        )
+        
+        # Extract all n continuations
+        results = []
+        for choice in response.choices:
+            continuation = choice.message.content
+            
+            # Extract logprobs for this choice
+            if choice.logprobs and choice.logprobs.content:
+                tokens = [t.token for t in choice.logprobs.content]
+                log_p = [t.logprob for t in choice.logprobs.content]
+                log_target = [self.alpha * lp for lp in log_p]
+            else:
+                tokens = []
+                log_p = []
+                log_target = []
+            
+            finished_naturally = choice.finish_reason == "stop"
+            
+            results.append((continuation, tokens, log_p, log_target, finished_naturally))
+        
+        # Token usage is for ALL n samples combined
+        return results, response.usage.prompt_tokens, response.usage.completion_tokens
+    
     def _calculate_beam_score(self, log_target: list[float], length: int) -> float:
         """Calculate length-normalized beam score."""
         if length == 0:
@@ -417,14 +456,16 @@ class BeamSearchSampling(SamplingStrategy):
     
     def generate(self, client: OpenAI, prompt: str, max_tokens: int = 512) -> tuple[str, int, int]:
         """
-        Generate completion using beam search with power sampling.
+        Generate completion using TRUE beam search with power sampling.
         
         Algorithm:
         1. Start with empty beam
-        2. Generate tokens_per_step tokens for each beam
-        3. Score all beams using p^α with length normalization
-        4. Keep top beam_width beams
+        2. For each beam, generate n_per_beam continuations (beam branching)
+        3. Score all beam_width × n_per_beam candidates using p^α
+        4. Keep top beam_width beams by score
         5. Repeat until max_tokens or all beams finish
+        
+        With beam_width=5, n_per_beam=5: generates 25 candidates per iteration, keeps top 5.
         """
         total_prompt_tokens = 0
         total_completion_tokens = 0
@@ -439,8 +480,10 @@ class BeamSearchSampling(SamplingStrategy):
             num_blocks = 1
         
         if self.debug:
+            print(f"[BeamSearch] TRUE beam search: beam_width={self.beam_width}, n_per_beam={self.n_per_beam}")
             print(f"[BeamSearch] Generating {num_blocks} blocks of {self.tokens_per_step} tokens")
-            print(f"[BeamSearch] beam_width={self.beam_width}, α={self.alpha}, length_penalty={self.length_penalty}")
+            print(f"[BeamSearch] α={self.alpha}, length_penalty={self.length_penalty}")
+            print(f"[BeamSearch] Each iteration: {len(active_beams)} beams × {self.n_per_beam} samples = candidates")
         
         for block_num in range(num_blocks):
             if not active_beams:
@@ -448,32 +491,41 @@ class BeamSearchSampling(SamplingStrategy):
             
             candidate_beams = []
             
-            # Expand each active beam
+            # EXPANSION PHASE: Generate n_per_beam continuations for each active beam
             for beam_text, beam_tokens, beam_log_p, beam_log_target, _ in active_beams:
-                # Generate next chunk
                 if block_num == 0 and not beam_text:
-                    # First expansion: generate from scratch
-                    text, tokens, log_p, log_target, pt, ct, finished = self._sample_full(
-                        client, prompt, self.tokens_per_step
+                    # First expansion: generate from scratch with n samples
+                    # Use n=n_per_beam to get multiple initial branches
+                    continuations, pt, ct = self._sample_continuation_multiple(
+                        client, prompt, "", self.tokens_per_step, n=self.n_per_beam
                     )
+                    total_prompt_tokens += pt
+                    total_completion_tokens += ct
+                    
+                    # Create candidate beam for each continuation
+                    for text, tokens, log_p, log_target, finished in continuations:
+                        candidate_beams.append((text, tokens, log_p, log_target, finished))
                 else:
-                    # Continue from prefix
-                    text, tokens, log_p, log_target, pt, ct, finished = self._sample_continuation(
-                        client, prompt, beam_text, self.tokens_per_step
+                    # Subsequent expansions: generate n continuations from this beam
+                    continuations, pt, ct = self._sample_continuation_multiple(
+                        client, prompt, beam_text, self.tokens_per_step, n=self.n_per_beam
                     )
-                
-                total_prompt_tokens += pt
-                total_completion_tokens += ct
-                
-                # Create new beam with extended sequence
-                new_text = beam_text + text
-                new_tokens = beam_tokens + tokens
-                new_log_p = beam_log_p + log_p
-                new_log_target = beam_log_target + log_target
-                
-                candidate_beams.append((new_text, new_tokens, new_log_p, new_log_target, finished))
+                    total_prompt_tokens += pt
+                    total_completion_tokens += ct
+                    
+                    # Create candidate beam for each continuation
+                    for text, tokens, log_p, log_target, finished in continuations:
+                        new_text = beam_text + text
+                        new_tokens = beam_tokens + tokens
+                        new_log_p = beam_log_p + log_p
+                        new_log_target = beam_log_target + log_target
+                        
+                        candidate_beams.append((new_text, new_tokens, new_log_p, new_log_target, finished))
             
             num_expansions += 1
+            
+            if self.debug:
+                print(f"[BeamSearch] Block {block_num+1}: Generated {len(candidate_beams)} candidates")
             
             # Score all candidates
             scored_beams = []

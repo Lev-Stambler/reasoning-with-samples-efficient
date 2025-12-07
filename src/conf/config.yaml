@@ -31,7 +31,8 @@ mcmc:
 beam_search:
   enabled: false
   alpha: 4.0                     # Power factor for target distribution pi(x) = p(x)^alpha
-  beam_width: 5                  # Number of parallel beams to maintain
+  beam_width: 2                  # Number of parallel beams to maintain (top-k after pruning)
+  n_per_beam: 2                  # Generate n continuations per beam (enables true beam search)
   tokens_per_step: 192           # Generate this many tokens per expansion
   length_penalty: 0.6            # Length normalization exponent (0.6 = Google NMT)
   proposal_temperature: 1.0      # Temperature for proposal distribution

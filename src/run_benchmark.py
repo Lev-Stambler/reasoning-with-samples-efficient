@@ -167,6 +167,7 @@ def main(cfg: DictConfig):
         strategies.append(BeamSearchSampling(
             alpha=cfg.beam_search.alpha,
             beam_width=cfg.beam_search.beam_width,
+            n_per_beam=cfg.beam_search.n_per_beam,
             tokens_per_step=cfg.beam_search.tokens_per_step,
             length_penalty=cfg.beam_search.length_penalty,
             proposal_temperature=cfg.beam_search.proposal_temperature,
