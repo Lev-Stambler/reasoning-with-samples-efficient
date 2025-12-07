@@ -76,8 +76,8 @@ def print_results_table(metrics_list: list[BenchmarkMetrics]):
         "Avg Time (s)",
         "Total Tokens",
         "Avg Tokens/Problem",
-        "Total Cost ($)",
-        "Cost/Problem ($)",
+        # "Total Cost ($)",
+        # "Cost/Problem ($)",
         "Problems"
     ]
 

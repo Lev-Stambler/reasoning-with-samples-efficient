@@ -55,7 +55,7 @@ model:
 # Benchmark configuration
 benchmark:
   name: humaneval # Options: humaneval, swebench, swebench-verified, gsm8k, gsm8k-train, mmlu, mmlu-stem, mmlu-humanities, mmlu-social, arcagi2, arcagi2-train
-  num_problems: 10
+  num_problems: 30
   max_tokens: 4_000 # Max tokens for final completion (applied everywhere)
   seed: 42 # Random seed for reproducibility (null to disable)
 
@@ -82,15 +82,15 @@ mcmc:
 mcmc_parallel:
   enabled: false
   alpha: 4.0 # Power factor for target distribution pi(x) = p(x)^alpha
-  steps: 2 # MCMC refinement steps per block (1 is typical with N parallel proposals)
-  top_logprobs: 15 # Number of top log probabilities to retrieve
-  proposal_temperature: 0.25 # Temperature for proposal distribution, should be alpha^(-1)
-  block_size: 512 # Block size B for block-wise generation (match mcmc.block_size)
+  steps: 1 # MCMC refinement steps per block (1 is typical with N parallel proposals)
+  top_logprobs: 10 # Number of top log probabilities to retrieve
+  proposal_temperature: 0.1 # Temperature for proposal distribution, should be alpha^(-1)
+  block_size: 1_000 # Block size B for block-wise generation (match mcmc.block_size)
   debug: true # Print debug info
-  use_length_penalty: true # Whether to apply length normalization
+  use_length_penalty: false # Whether to apply length normalization
   length_penalty: 0.6 # Length penalty exponent (like beam search)
   # Parallel-specific parameters:
-  num_proposals: 10 # N proposals per MCMC step (includes current state)
+  num_proposals: 15 # N proposals per MCMC step (includes current state)
   max_concurrent: 100 # Max concurrent API requests
   timeout: 60.0 # Per-request timeout (seconds)
   max_retries: 3 # Retry count for failed requests

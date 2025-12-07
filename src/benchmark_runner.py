@@ -163,6 +163,7 @@ class SamplingStrategy:
         For continuations, prefix is appended after the generation prompt.
         NO closing tag - model continues from exactly where prefix ends.
         """
+        return prompt + prefix
         # Auto-load tokenizer if model_name provided and no tokenizer set
         if self._tokenizer is None and model_name:
             self.set_tokenizer_from_model(model_name)
