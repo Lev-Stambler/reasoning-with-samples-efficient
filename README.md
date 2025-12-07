@@ -1,5 +1,8 @@
 # Reasoning with Sampling
 
+<img width="4480" height="2564" alt="CleanShot 2025-12-07 at 10 21 10@2x" src="https://github.com/user-attachments/assets/69143c2d-e641-4688-b75b-bbb87f5bcaae" />
+<img width="5042" height="2780" alt="CleanShot 2025-12-07 at 10 20 57@2x" src="https://github.com/user-attachments/assets/9a57d92e-02a9-445c-941a-60946ac74133" />
+
 
 ### [Paper](https://arxiv.org/abs/2510.14901) | [Project Page](https://aakaran.github.io/reasoning_with_sampling/)
 
@@ -20,6 +23,24 @@ git clone https://github.com/aakaran/reasoning-with-sampling.git
 cd reasoning-with-sampling
 uv pip install -r pyproject.toml
 ```
+
+## Interactive Demo (NEW!)
+
+Try out different sampling strategies with our interactive Streamlit app:
+
+```bash
+streamlit run chat-ui/app.py
+```
+
+Features:
+- 🎯 Side-by-side comparison of Greedy, MCMC, and Beam Search (default)
+- ⚡ Parallel execution - all methods run simultaneously
+- ⚙️ Method-specific settings in each column (not in sidebar!)
+- 📊 Token usage, timing, and acceptance rate tracking
+- 📋 Table-like layout with vertically aligned stats
+- 📝 Method descriptions for each sampling strategy
+
+See [chat-ui/README.md](chat-ui/README.md) for detailed instructions.
 
 
 ## Sampling

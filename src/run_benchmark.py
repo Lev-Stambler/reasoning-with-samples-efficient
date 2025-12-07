@@ -15,6 +15,8 @@ Multirun (batch comparisons):
     python run_benchmark.py -m mcmc.alpha=1.0,1.67,4.0
 """
 import os
+import random
+import numpy as np
 import hydra
 from omegaconf import DictConfig, OmegaConf
 from dotenv import load_dotenv
@@ -176,20 +178,31 @@ def main(cfg: DictConfig):
     if cfg.output.verbose:
         print_config(cfg)
 
+    # Set random seed for reproducibility
+    if cfg.benchmark.get("seed") is not None:
+        seed = cfg.benchmark.seed
+        random.seed(seed)
+        np.random.seed(seed)
+        print(f"🎲 Random seed set to: {seed}\n")
+
     # Select model config based on provider
     provider = cfg.model.get("provider", "xai")
-    if provider == "ollama":
-        model_name = cfg.model.ollama.name
-        base_url = cfg.model.ollama.base_url
-        api_key = "ollama"  # Ollama doesn't require API key
-        supports_n_param = False  # Ollama ignores n parameter
-        print(f"Using Ollama: {model_name} at {base_url}")
-    elif provider == "vllm":
+    if provider == "vllm":
         model_name = cfg.model.vllm.name
         base_url = cfg.model.vllm.base_url
         api_key = "vllm"  # vLLM doesn't require API key
         supports_n_param = True  # vLLM supports n parameter for batching
         print(f"Using vLLM: {model_name} at {base_url}")
+    elif provider == "runpod":
+        model_name = cfg.model.runpod.name
+        base_url = cfg.model.runpod.base_url or os.getenv("RUNPOD_ENDPOINT")
+        api_key = "runpod"  # RunPod vLLM doesn't require API key
+        supports_n_param = True  # RunPod vLLM supports n parameter for batching
+        if not base_url:
+            print("Error: Please set RUNPOD_ENDPOINT environment variable")
+            print("   Or set model.runpod.base_url in config")
+            return
+        print(f"Using RunPod: {model_name} at {base_url}")
     else:  # xai (default)
         model_name = cfg.model.xai.name
         base_url = cfg.model.xai.base_url
@@ -209,6 +222,11 @@ def main(cfg: DictConfig):
     benchmark_class = BENCHMARK_REGISTRY[cfg.benchmark.name]
     benchmark = benchmark_class()
 
+    # Build suffix overrides for strategies that have custom suffixes
+    suffix_overrides = {}
+    if cfg.greedy.get("suffix") is not None:
+        suffix_overrides["Greedy"] = cfg.greedy.suffix
+
     # Initialize runner
     runner = BenchmarkRunner(
         benchmark=benchmark,
@@ -217,7 +235,8 @@ def main(cfg: DictConfig):
         base_url=base_url,
         output_dir="predictions",
         prompt_prefix=cfg.prompt.prefix,
-        prompt_suffix=cfg.prompt.suffix
+        prompt_suffix=cfg.prompt.suffix,
+        suffix_overrides=suffix_overrides
     )
 
     # Setup strategies based on config
