@@ -27,6 +27,7 @@ dependencies = [
     "sentencepiece",
     "safetensors",
     "einops",
+    "pylatexenc",
 ]
 
 [project.optional-dependencies]
