@@ -38,7 +38,8 @@ model:
   # Start server: vllm serve Qwen/Qwen3-8B --port 8000
   # vLLM provides: real logprobs, n parameter support, true GPU batching
   vllm:
-    name: Qwen/Qwen3-8B
+    # name: Qwen/Qwen3-8B
+    name: Qwen/Qwen2.5-7B
     # name: HuggingFaceTB/SmolLM2-1.7B-Instruct
     # name: HuggingFaceTB/SmolLM2-135M-Instruct
     base_url: http://localhost:8000/v1
@@ -54,16 +55,14 @@ model:
 # Benchmark configuration
 benchmark:
   name: humaneval # Options: humaneval, swebench, swebench-verified, gsm8k, gsm8k-train, mmlu, mmlu-stem, mmlu-humanities, mmlu-social, arcagi2, arcagi2-train
-  num_problems: 5
-  max_tokens: 2_048 # Max tokens for final completion (applied everywhere)
+  num_problems: 30
+  max_tokens: 3_072 # Max tokens for final completion (applied everywhere)
   seed: 42 # Random seed for reproducibility (null to disable)
 
 # Prompt customization
 prompt:
   prefix: "" # Text to add before the benchmark prompt
-  suffix: "\n\nThink deeply and show your work, step by step, check your answer and output 'yes' 10 times if you are correct!" # Text to add after the benchmark prompt
-  # suffix: "\n\nThink deeply and show your work, step by step" # Text to add after the benchmark prompt
-  # suffix: ""
+  suffix: ""
 
 # MCMC sampling configuration (serial, single proposal per step)
 mcmc:
@@ -99,12 +98,12 @@ beam_search:
   alpha: 4.0 # Power factor for target distribution pi(x) = p(x)^alpha
   max_concurrent: 100 # Max concurrent API requests
   timeout: 300.0 # Timeout in seconds (increase for local servers like vLLM)
-  beam_width: 20 # Number of parallel beams to maintain (top-k after pruning)
-  n_per_beam: 3 # Generate n continuations per beam (enables true beam search)
-  tokens_per_step: 1_024 # Generate this many tokens per expansion
-  use_length_penalty: false # Whether to apply length normalization (set false to disable)
-  length_penalty: 0.0 # Length normalization exponent (0.6 = Google NMT, only used if use_length_penalty=true)
-  proposal_temperature: 0.5 # Temperature for proposal distribution, higher temp = more "exploration"
+  beam_width: 5 # Number of parallel beams to maintain (top-k after pruning)
+  n_per_beam: 7 # Generate n continuations per beam (enables true beam search)
+  tokens_per_step: 512 # Generate this many tokens per expansion
+  use_length_penalty: true # Whether to apply length normalization (set false to disable)
+  length_penalty: 0.6 # Length normalization exponent (0.6 = Google NMT, only used if use_length_penalty=true)
+  proposal_temperature: 0.1 # Temperature for proposal distribution, higher temp = more "exploration"
   top_logprobs: 15 # Number of top log probabilities to retrieve
   debug: false # Print debug info during beam search
 
@@ -116,8 +115,8 @@ temperature_sampling:
 # Greedy sampling configuration
 greedy:
   enabled: true
-  # suffix: "" # Text to add after the benchmark prompt
-  suffix: "\n\nThink deeply and show your work, step by step" # Text to add after the benchmark prompt
+  suffix: "" # Text to add after the benchmark prompt
+  # suffix: "\n\nThink deeply and show your work, step by step" # Text to add after the benchmark prompt
 
 # Output configuration
 output:
