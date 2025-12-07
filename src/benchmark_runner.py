@@ -312,7 +312,6 @@ class MCMCSampling(SamplingStrategy):
 
                 # Check if we have a valid range
                 if min_block > num_complete_blocks - 1:
-                    assert False, "This should not happen"
                     if self.debug:
                         print(f"[MCMC]   Step {step+1}: Skipping, restrict_to_last_n={self.restrict_to_last_n} too small")
                     continue
@@ -324,7 +323,7 @@ class MCMCSampling(SamplingStrategy):
                 prefix = "".join(tokens_cur[:idx])
 
                 # Target length for proposal (same as current)
-                target_len = len(tokens_cur) - idx + self.block_size
+                target_len = len(tokens_cur) - idx #+ self.block_size
 
                 # Generate new suffix
                 new_suffix, tokens_prop, log_p_prop, log_target_prop, pt, ct, _ = self._sample_continuation(
@@ -412,7 +411,7 @@ class ParallelMCMCSampling(SamplingStrategy):
         debug: bool = False,
         # Parallel-specific params:
         num_proposals: int = 4,
-        max_concurrent: int = 10,
+        max_concurrent: int = 100,
         timeout: float = 60.0,
         max_retries: int = 3,
         # API config (set by generate() from client):
@@ -514,6 +513,51 @@ class ParallelMCMCSampling(SamplingStrategy):
                     {"role": "user", "content": prompt},
                     {"role": "assistant", "content": prefix},
                 ],
+                "temperature": self.proposal_temperature,
+                "max_tokens": target_len,
+                "logprobs": True,
+                "top_logprobs": self.top_logprobs,
+            })
+
+        # Execute in parallel
+        responses = await client.chat_completion_batch(requests, max_concurrent=self.max_concurrent)
+
+        # Parse responses into Proposals
+        proposals = [current_proposal]  # Index 0 is current state
+        total_pt = 0
+        total_ct = 0
+
+        for response in responses:
+            tokens, log_p, log_target = self._extract_logprobs_from_response(response)
+            proposals.append(Proposal(
+                tokens=tokens,
+                log_p=log_p,
+                log_target=log_target,
+                prompt_tokens=response.prompt_tokens,
+                completion_tokens=response.completion_tokens,
+            ))
+            total_pt += response.prompt_tokens
+            total_ct += response.completion_tokens
+
+        return proposals, total_pt, total_ct
+
+    async def _generate_parallel_proposals_full(
+        self,
+        client: AsyncOpenAIClient,
+        prompt: str,
+        target_len: int,
+        current_proposal: Proposal,
+    ) -> Tuple[List[Proposal], int, int]:
+        """
+        Generate N-1 new full proposals in parallel (no prefix) + include current state.
+
+        Used when regenerating from the beginning (idx=0).
+        """
+        # Create N-1 async requests for full generation
+        requests = []
+        for _ in range(self.num_proposals - 1):
+            requests.append({
+                "messages": [{"role": "user", "content": prompt}],
                 "temperature": self.proposal_temperature,
                 "max_tokens": target_len,
                 "logprobs": True,
@@ -660,22 +704,27 @@ class ParallelMCMCSampling(SamplingStrategy):
                 # Run MCMC refinement steps with parallel proposals
                 for step in range(self.mcmc_steps):
                     num_complete_blocks = len(tokens_cur) // self.block_size
-                    if num_complete_blocks < 2:
+
+                    # Need at least 1 complete block to do MCMC
+                    # (model may finish early with fewer tokens than block_size)
+                    if num_complete_blocks < 1:
                         if self.debug:
-                            print(f"[ParallelMCMC]   Step {step+1}: Skipping, only {num_complete_blocks} complete blocks")
-                        continue
+                            print(f"[ParallelMCMC]   Step {step+1}: Skipping MCMC, {len(tokens_cur)} tokens < block_size {self.block_size}")
+                        break  # No point continuing MCMC steps for this block
 
                     attempts += 1
 
-                    # Pick random block boundary
-                    block_idx = random.randint(1, num_complete_blocks - 1)
+                    # Pick random block boundary (can regenerate from beginning with min_block=0)
+                    min_block = 0
+                    block_idx = random.randint(min_block, num_complete_blocks - 1)
                     idx = block_idx * self.block_size
 
                     # Prefix to keep
                     prefix = "".join(tokens_cur[:idx])
-                    target_len = len(tokens_cur) - idx
+                    # Target length includes an extra block for exploration
+                    target_len = len(tokens_cur) - idx #+ self.block_size
 
-                    # Current suffix as Proposal
+                    # Current suffix as Proposal (will be sliced to match proposal length later)
                     current_proposal = Proposal(
                         tokens=tokens_cur[idx:],
                         log_p=log_p_cur[idx:],
@@ -685,11 +734,30 @@ class ParallelMCMCSampling(SamplingStrategy):
                     )
 
                     # Generate N-1 new proposals in parallel
-                    proposals, pt, ct = await self._generate_parallel_proposals(
-                        client, prompt, prefix, target_len, current_proposal
-                    )
+                    # If idx=0 (regenerating from beginning), use full generation instead of continuation
+                    if idx == 0:
+                        proposals, pt, ct = await self._generate_parallel_proposals_full(
+                            client, prompt, target_len, current_proposal
+                        )
+                    else:
+                        proposals, pt, ct = await self._generate_parallel_proposals(
+                            client, prompt, prefix, target_len, current_proposal
+                        )
                     total_prompt_tokens += pt
                     total_completion_tokens += ct
+
+                    # For fair comparison, slice current suffix to match minimum proposal length
+                    # (handles variable-length proposals)
+                    min_len = min(len(p.tokens) for p in proposals)
+                    for i, p in enumerate(proposals):
+                        if len(p.tokens) > min_len:
+                            proposals[i] = Proposal(
+                                tokens=p.tokens[:min_len],
+                                log_p=p.log_p[:min_len],
+                                log_target=p.log_target[:min_len],
+                                prompt_tokens=p.prompt_tokens,
+                                completion_tokens=p.completion_tokens,
+                            )
 
                     # Compute transition matrix
                     A = self._compute_transition_matrix(proposals)
