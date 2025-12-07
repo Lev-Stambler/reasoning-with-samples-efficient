@@ -33,6 +33,8 @@ dependencies = [
     "pylatexenc",
     "swebench",
     "aiohttp>=3.9.0",
+    "hydra-core",
+    "hf_transfer",
 ]
 
 [project.optional-dependencies]
