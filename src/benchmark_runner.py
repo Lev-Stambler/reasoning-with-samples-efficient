@@ -150,8 +150,9 @@ class SamplingStrategy:
             print(f"[SamplingStrategy] You may need to manually call SamplingStrategy.set_tokenizer()")
             raise
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, seed: int = None):
         self.name = name
+        self.seed = seed
 
     def _apply_chat_template(self, prompt: str, prefix: str = "", model_name: str = None) -> str:
         """
@@ -259,8 +260,8 @@ class SamplingStrategy:
 class GreedySampling(SamplingStrategy):
     """Greedy decoding with temperature=0 using chat completions API."""
 
-    def __init__(self):
-        super().__init__("Greedy")
+    def __init__(self, seed: int = None):
+        super().__init__("Greedy", seed=seed)
 
     def generate(self, client: OpenAI, prompt: str, max_tokens: int = 512) -> tuple[str, int, int]:
         response = client.chat.completions.create(
@@ -268,6 +269,7 @@ class GreedySampling(SamplingStrategy):
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
             max_tokens=max_tokens,
+            seed=self.seed,
         )
         return (
             response.choices[0].message.content,
@@ -302,11 +304,12 @@ class MCMCSampling(SamplingStrategy):
         restrict_to_last_n: int = None,  # Only resample last N blocks (None = disabled)
         block_size: int = 192,  # Block size B for block-wise generation (paper default)
         debug: bool = False,  # Print debug info during MCMC
+        seed: int = None,  # Random seed for API reproducibility
     ):
         name = f"MCMC(α={alpha},steps={mcmc_steps},B={block_size})"
         if restrict_to_last_n is not None:
             name += f",lastN={restrict_to_last_n}"
-        super().__init__(name)
+        super().__init__(name, seed=seed)
         self.alpha = alpha
         self.mcmc_steps = mcmc_steps
         self.top_logprobs = top_logprobs
@@ -354,6 +357,7 @@ class MCMCSampling(SamplingStrategy):
             temperature=self.proposal_temperature,
             max_tokens=max_tokens,
             logprobs=self.top_logprobs,
+            seed=self.seed,
         )
 
         text = response.choices[0].text
@@ -576,9 +580,10 @@ class ParallelMCMCSampling(SamplingStrategy):
         base_url: str = "https://api.openai.com/v1",
         model: str = "gpt-4o-mini",
         supports_n_param: bool = True,  # Whether API supports n parameter for batching
+        seed: int = None,  # Random seed for API reproducibility
     ):
         name = f"ParallelMCMC(α={alpha},steps={mcmc_steps},B={block_size},N={num_proposals})"
-        super().__init__(name)
+        super().__init__(name, seed=seed)
         self.alpha = alpha
         self.mcmc_steps = mcmc_steps
         self.top_logprobs = top_logprobs
@@ -632,6 +637,7 @@ class ParallelMCMCSampling(SamplingStrategy):
             temperature=self.proposal_temperature,
             max_tokens=max_tokens,
             logprobs=self.top_logprobs,
+            seed=self.seed,
         )
 
     async def _call_api_multiple(
@@ -650,7 +656,8 @@ class ParallelMCMCSampling(SamplingStrategy):
             temperature=self.proposal_temperature,
             max_tokens=max_tokens,
             logprobs=self.top_logprobs,
-            n=n
+            n=n,
+            seed=self.seed,
         )
 
     async def _generate_parallel_proposals(
@@ -751,43 +758,19 @@ class ParallelMCMCSampling(SamplingStrategy):
         N = len(proposals)
         A = np.zeros((N, N))
 
-        # Compare at the current state's length (proposals[0])
-        ref_len = len(proposals[0].tokens)
-
-        # Compute log_p and log_target for each proposal (truncated to ref_len)
-        # Track validity to avoid -1e10 cancellation bug
-        log_p_list = []
-        log_target_list = []
-        valid = []
-        for p in proposals:
-            # log_p_list.append(sum(p.log_p))
-            # log_target_list.append(sum(p.log_target))
-            if True:
-                if len(p.tokens) >= ref_len:
-                    lp = sum(p.log_p[:ref_len])
-                    lt = sum(p.log_target[:ref_len])  # log_target = α * log_p
-                    valid.append(True)
-                else:
-                    # Proposal too short - mark as invalid
-                    lp = 0.0  # Placeholder, won't be used
-                    lt = 0.0
-                    valid.append(False)
-                log_p_list.append(lp)
-                log_target_list.append(lt)
+        # Sum log probs for each proposal (use all tokens)
+        log_p_list = [sum(p.log_p) for p in proposals]
+        log_target_list = [sum(p.log_target) for p in proposals]
 
         # Compute transition matrix using MH ratio (matching serial MCMC)
         for i in range(N):
             for j in range(N):
                 if i != j:
-                    if not valid[j]:
-                        # Cannot transition to invalid proposal
-                        A[i, j] = 0.0
-                    else:
-                        # log R(i→j) = log_target_j + log_p_i - log_target_i - log_p_j
-                        log_R = (log_target_list[j] + log_p_list[i]
-                                 - log_target_list[i] - log_p_list[j])
-                        log_R = np.clip(log_R, -50, 50)
-                        A[i, j] = (1.0 / N) * min(1.0, np.exp(log_R))
+                    # log R(i→j) = log_target_j + log_p_i - log_target_i - log_p_j
+                    log_R = (log_target_list[j] + log_p_list[i]
+                             - log_target_list[i] - log_p_list[j])
+                    log_R = np.clip(log_R, -50, 50)
+                    A[i, j] = (1.0 / N) * min(1.0, np.exp(log_R))
 
             A[i, i] = 1.0 - np.sum(A[i, :])
 
@@ -844,12 +827,14 @@ class ParallelMCMCSampling(SamplingStrategy):
             # Run MCMC refinement steps on current state
             for step in range(self.mcmc_steps):
                 num_complete_blocks = len(tokens_cur) // self.block_size
-                # if num_complete_blocks < 1:
-                    # if self.debug:
-                        # print(f"[ParallelMCMC] Step {step+1}: Skipping, not enough tokens for a complete block")
-                    # break
 
-                # Block-aligned index selection (keep at least first block)
+                # Skip if no complete blocks to resample from
+                if num_complete_blocks < 1:
+                    if self.debug:
+                        print(f"[ParallelMCMC] Step {step+1}: not skipping but warning")
+                    # continue
+
+                # Block-aligned index selection
                 block_idx = random.randint(0, num_complete_blocks - 1) if num_complete_blocks > 0 else 0
                 target_idx = block_idx * self.block_size
 
@@ -980,9 +965,10 @@ class BeamSearchSampling(SamplingStrategy):
         supports_n_param: bool = True,  # Whether API supports n parameter for batching
         max_concurrent: int = 100,  # Max concurrent API requests
         timeout: float = 300.0,  # Timeout in seconds (longer for local servers)
+        seed: int = None,  # Random seed for API reproducibility
     ):
         name = f"BeamSearch(α={alpha},width={beam_width},n={n_per_beam},tps={tokens_per_step})"
-        super().__init__(name)
+        super().__init__(name, seed=seed)
         self.alpha = alpha
         self.beam_width = beam_width
         self.n_per_beam = n_per_beam
@@ -1024,6 +1010,7 @@ class BeamSearchSampling(SamplingStrategy):
             temperature=self.proposal_temperature,
             max_tokens=max_tokens,
             logprobs=self.top_logprobs,
+            seed=self.seed,
         )
 
         text = response.choices[0].text
@@ -1046,6 +1033,7 @@ class BeamSearchSampling(SamplingStrategy):
             temperature=self.proposal_temperature,
             max_tokens=max_tokens,
             logprobs=self.top_logprobs,
+            seed=self.seed,
         )
 
         continuation = response.choices[0].text
@@ -1069,6 +1057,7 @@ class BeamSearchSampling(SamplingStrategy):
             max_tokens=max_tokens,
             logprobs=self.top_logprobs,
             n=n,  # Generate n different samples
+            seed=self.seed,
         )
 
         # Extract all n continuations
@@ -1091,6 +1080,7 @@ class BeamSearchSampling(SamplingStrategy):
             temperature=self.proposal_temperature,
             max_tokens=max_tokens,
             logprobs=self.top_logprobs,
+            seed=self.seed,
         )
 
         choice = response.choices[0]
@@ -1113,6 +1103,7 @@ class BeamSearchSampling(SamplingStrategy):
             max_tokens=max_tokens,
             logprobs=self.top_logprobs,
             n=n,
+            seed=self.seed,
         )
 
         results = []
@@ -1377,8 +1368,8 @@ class BeamSearchSampling(SamplingStrategy):
 class TemperatureSampling(SamplingStrategy):
     """Standard temperature sampling using completions API."""
 
-    def __init__(self, temperature: float = 0.8):
-        super().__init__(f"Temperature(T={temperature})")
+    def __init__(self, temperature: float = 0.8, seed: int = None):
+        super().__init__(f"Temperature(T={temperature})", seed=seed)
         self.temperature = temperature
 
     def generate(self, client: OpenAI, prompt: str, max_tokens: int = 512) -> tuple[str, int, int]:
@@ -1388,6 +1379,7 @@ class TemperatureSampling(SamplingStrategy):
             prompt=full_prompt,
             temperature=self.temperature,
             max_tokens=max_tokens,
+            seed=self.seed,
         )
         return (
             response.choices[0].text,

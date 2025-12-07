@@ -241,9 +241,11 @@ def main(cfg: DictConfig):
 
     # Setup strategies based on config
     strategies = []
+    # Get seed for API reproducibility (None if not set)
+    api_seed = cfg.benchmark.get("seed")
 
     if getattr(cfg.greedy, 'enabled', False):
-        strategies.append(GreedySampling())
+        strategies.append(GreedySampling(seed=api_seed))
 
     if getattr(cfg.mcmc, 'enabled', False):
         strategies.append(MCMCSampling(
@@ -254,6 +256,7 @@ def main(cfg: DictConfig):
             restrict_to_last_n=cfg.mcmc.restrict_to_last_n,
             block_size=cfg.mcmc.block_size,
             debug=cfg.mcmc.debug,
+            seed=api_seed,
         ))
 
     if getattr(cfg.mcmc_parallel, 'enabled', False):
@@ -272,6 +275,7 @@ def main(cfg: DictConfig):
             base_url=base_url,
             model=model_name,
             supports_n_param=supports_n_param,
+            seed=api_seed,
         ))
 
     if getattr(cfg.beam_search, 'enabled', False):
@@ -288,11 +292,13 @@ def main(cfg: DictConfig):
             supports_n_param=supports_n_param,
             max_concurrent=getattr(cfg.beam_search, 'max_concurrent', 100),
             timeout=getattr(cfg.beam_search, 'timeout', 300.0),
+            seed=api_seed,
         ))
 
     if getattr(cfg.temperature_sampling, 'enabled', False):
         strategies.append(TemperatureSampling(
-            temperature=cfg.temperature_sampling.temperature
+            temperature=cfg.temperature_sampling.temperature,
+            seed=api_seed,
         ))
 
     if not strategies:
