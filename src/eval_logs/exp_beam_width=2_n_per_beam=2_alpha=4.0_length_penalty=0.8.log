@@ -1,0 +1,745 @@
+
+============================================================
+CONFIGURATION
+============================================================
+model:
+  name: grok-4-1-fast-non-reasoning
+  base_url: https://api.x.ai/v1
+benchmark:
+  name: gsm8k
+  num_problems: 30
+  max_tokens: 128
+mcmc:
+  enabled: false
+  alpha: 1.67
+  steps: 10
+  top_logprobs: 5
+  proposal_temperature: 0.59
+  restrict_to_last_n: null
+  block_size: 32
+  debug: true
+beam_search:
+  enabled: true
+  alpha: 4.0
+  beam_width: 2
+  n_per_beam: 2
+  tokens_per_step: 16
+  length_penalty: 0.8
+  proposal_temperature: 1.0
+  top_logprobs: 5
+  debug: false
+temperature_sampling:
+  enabled: false
+  temperature: 0.8
+greedy:
+  enabled: true
+output:
+  verbose: true
+  save_results: false
+  results_dir: ./results
+
+============================================================
+
+Loading GSM8K dataset...
+
+Running benchmark on 30 GSM8K problems...
+Model: grok-4-1-fast-non-reasoning
+Strategies: ['Greedy', 'BeamSearch(α=4.0,width=2,n=2,tps=16)']
+
+
+Problem 1/30: Problem 1
+  Testing Greedy... [2025-12-07 01:26:36,340][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (0.93s, 363 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:26:37,154][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:37,877][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:37,898][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:38,345][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:38,392][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:39,044][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:39,047][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:39,713][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:39,717][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:40,325][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:40,329][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:40,855][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:41,458][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:42,066][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:42,070][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (5.72s, 10630 tokens, $0.0023)
+    incorrect: got '.', expected '18'
+
+Problem 2/30: Problem 2
+  Testing Greedy... [2025-12-07 01:26:42,892][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (0.82s, 295 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:26:43,893][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:44,413][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:44,451][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:45,052][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:45,065][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:45,615][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:45,625][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:46,080][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:46,138][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:46,599][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:46,604][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:47,087][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:47,092][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:47,557][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:47,563][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (4.67s, 9598 tokens, $0.0021)
+    incorrect: got 2, expected 3
+
+Problem 3/30: Problem 3
+  Testing Greedy... [2025-12-07 01:26:48,604][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (1.04s, 393 tokens, $0.0001)
+    incorrect: got 100, expected 70000
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:26:49,128][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:49,747][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:49,789][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:50,361][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:50,816][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:51,592][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:51,597][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:52,310][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:52,314][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:54,254][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:54,412][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:55,484][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:55,487][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:55,892][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:55,898][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (7.30s, 10312 tokens, $0.0022)
+    incorrect: got 1., expected 70000
+
+Problem 4/30: Problem 4
+  Testing Greedy... [2025-12-07 01:26:56,963][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.06s, 363 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:26:57,472][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:58,087][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:58,169][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:58,681][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:58,685][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:59,146][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:59,170][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:59,641][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:26:59,664][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:00,021][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:00,061][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:00,499][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:00,514][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:01,795][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:01,811][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (4.85s, 9862 tokens, $0.0021)
+    incorrect: got 3, expected 540
+
+Problem 5/30: Problem 5
+  Testing Greedy... [2025-12-07 01:27:03,059][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (1.24s, 451 tokens, $0.0001)
+    incorrect: got 4., expected 20
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:27:03,676][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:04,455][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:06,024][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:06,646][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:06,652][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:07,261][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:07,270][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:07,619][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:07,623][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:08,079][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:08,085][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:08,796][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:08,803][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:09,716][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:09,723][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (6.67s, 12028 tokens, $0.0025)
+    incorrect: got 1, expected 20
+
+Problem 6/30: Problem 6
+  Testing Greedy... [2025-12-07 01:27:11,221][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (1.49s, 396 tokens, $0.0001)
+    incorrect: got 8, expected 64
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:27:11,866][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:12,461][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:12,516][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:13,030][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:13,047][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:13,608][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:13,615][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:14,120][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:14,126][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:14,539][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:14,566][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:14,959][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:14,987][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:15,661][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:15,667][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (4.46s, 10356 tokens, $0.0022)
+    incorrect: got 5, expected 64
+
+Problem 7/30: Problem 7
+  Testing Greedy... [2025-12-07 01:27:16,269][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (0.59s, 331 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:27:16,780][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:17,294][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:17,300][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:17,705][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:17,709][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:18,112][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:18,136][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:18,480][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:18,492][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:18,947][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:18,953][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:19,752][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:19,758][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:20,264][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:20,270][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (4.00s, 10012 tokens, $0.0021)
+    incorrect: got 4, expected 260
+
+Problem 8/30: Problem 8
+  Testing Greedy... [2025-12-07 01:27:21,594][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (1.32s, 409 tokens, $0.0001)
+    incorrect: got '.', expected '160'
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:27:22,210][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:22,720][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:22,727][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:23,138][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:23,151][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:23,647][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:23,651][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:24,154][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:24,161][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:24,497][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:24,507][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:24,931][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:24,934][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:25,340][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:25,357][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (3.77s, 10792 tokens, $0.0023)
+    incorrect: got 1., expected 160
+
+Problem 9/30: Problem 9
+  Testing Greedy... [2025-12-07 01:27:27,035][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (1.67s, 444 tokens, $0.0001)
+    incorrect: got '.', expected '45'
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:27:27,638][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:28,149][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:28,154][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:28,520][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:28,534][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:29,071][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:29,079][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:29,529][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:33,168][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:33,782][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:33,790][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:34,294][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:34,301][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:34,714][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:34,727][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (7.70s, 11842 tokens, $0.0025)
+    incorrect: got 1, expected 45
+
+Problem 10/30: Problem 10
+  Testing Greedy... [2025-12-07 01:27:35,591][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (0.86s, 399 tokens, $0.0001)
+    incorrect: got 5, expected 460
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:27:36,043][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:36,548][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:36,554][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:37,262][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:37,268][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:37,628][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:37,634][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:37,979][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:38,657][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:39,160][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:39,171][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:39,616][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:39,623][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:40,056][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:40,087][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (4.50s, 10452 tokens, $0.0022)
+    incorrect: got 40, expected 460
+
+Problem 11/30: Problem 11
+  Testing Greedy... [2025-12-07 01:27:41,358][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (1.27s, 402 tokens, $0.0001)
+    incorrect: got 126., expected 366
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:27:41,972][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:42,485][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:42,490][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:43,100][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:43,105][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:43,612][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:43,618][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:44,225][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:44,231][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:44,676][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:44,680][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:45,251][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:45,257][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:45,761][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:45,767][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (4.41s, 10508 tokens, $0.0022)
+    incorrect: got 1, expected 366
+
+Problem 12/30: Problem 12
+  Testing Greedy... [2025-12-07 01:27:46,713][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (0.94s, 403 tokens, $0.0001)
+    incorrect: got 330, expected 694
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:27:47,404][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:47,913][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:47,921][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:48,473][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:48,835][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:49,245][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:49,259][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:49,758][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:49,780][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:50,268][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:50,274][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:50,678][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:50,685][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:51,193][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:51,201][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (4.49s, 10612 tokens, $0.0023)
+    incorrect: got 1., expected 694
+
+Problem 13/30: Problem 13
+  Testing Greedy... [2025-12-07 01:27:52,622][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (1.42s, 409 tokens, $0.0001)
+    incorrect: got 4., expected 13
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:27:53,346][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:53,825][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:53,953][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:54,355][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:54,372][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:54,896][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:55,059][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:55,437][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:55,478][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:56,106][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:56,119][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:56,618][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:56,625][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:57,231][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:57,237][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (4.62s, 10786 tokens, $0.0023)
+    incorrect: got 1., expected 13
+
+Problem 14/30: Problem 14
+  Testing Greedy... [2025-12-07 01:27:58,143][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (0.90s, 401 tokens, $0.0001)
+    incorrect: got 1, expected 18
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:27:58,574][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:59,176][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:59,183][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:59,704][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:27:59,709][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:00,201][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:00,209][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:00,655][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:00,660][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:01,123][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:01,130][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:01,536][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:01,574][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:01,986][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:02,188][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (4.05s, 10552 tokens, $0.0023)
+    incorrect: got '.', expected '18'
+
+Problem 15/30: Problem 15
+  Testing Greedy... [2025-12-07 01:28:03,068][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (0.87s, 393 tokens, $0.0001)
+    incorrect: got 12, expected 60
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:28:03,655][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:04,196][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:04,203][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:04,911][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:04,917][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:05,425][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:05,432][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:05,838][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:05,840][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:06,657][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:06,664][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:07,164][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:07,170][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:07,677][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:07,685][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (4.62s, 10312 tokens, $0.0022)
+    incorrect: got '.', expected '60'
+
+Problem 16/30: Problem 16
+  Testing Greedy... [2025-12-07 01:28:09,108][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (1.42s, 434 tokens, $0.0001)
+    incorrect: got 1.2, expected 125
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:28:09,562][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:10,088][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:10,128][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:10,556][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:10,613][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:11,036][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:11,041][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:11,568][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:11,576][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:11,913][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:12,181][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:12,551][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:12,558][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:13,215][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:13,223][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (4.12s, 11542 tokens, $0.0025)
+    incorrect: got 1., expected 125
+
+Problem 17/30: Problem 17
+  Testing Greedy... [2025-12-07 01:28:14,343][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (1.12s, 392 tokens, $0.0001)
+    empty completion
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:28:14,846][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:15,268][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:15,411][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:15,865][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:15,881][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:16,385][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:16,392][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:16,893][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:16,900][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:17,406][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:17,414][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:17,814][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:17,821][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:18,253][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:18,261][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (3.92s, 10234 tokens, $0.0022)
+    incorrect: got '.', expected '230'
+
+Problem 18/30: Problem 18
+  Testing Greedy... [2025-12-07 01:28:19,536][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (1.27s, 395 tokens, $0.0001)
+    incorrect: got 450, expected 57500
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:28:20,072][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:20,682][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:20,688][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:21,296][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:21,303][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:22,422][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:22,427][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:22,810][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:22,818][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:23,496][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:23,549][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:24,070][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:24,097][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:24,573][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:24,581][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (5.05s, 10372 tokens, $0.0022)
+    incorrect: got 1., expected 57500
+
+Problem 19/30: Problem 19
+  Testing Greedy... [2025-12-07 01:28:25,356][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (0.77s, 337 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:28:26,007][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:26,530][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:26,537][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:27,270][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:27,279][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:27,805][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:27,818][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:28,362][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:28,369][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:28,874][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:28,881][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:29,359][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:29,416][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:29,898][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:30,012][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (4.66s, 9642 tokens, $0.0021)
+    empty completion
+
+Problem 20/30: Problem 20
+  Testing Greedy... [2025-12-07 01:28:31,333][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (1.32s, 408 tokens, $0.0001)
+    incorrect: got '.', expected '6'
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:28:31,981][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:32,456][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:32,459][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:32,950][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:32,954][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:33,481][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:33,488][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:34,095][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:34,102][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:34,505][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:34,509][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:35,020][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:35,026][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:35,529][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:35,536][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (4.21s, 10762 tokens, $0.0023)
+    incorrect: got 12, expected 6
+
+Problem 21/30: Problem 21
+  Testing Greedy... [2025-12-07 01:28:36,500][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (0.96s, 404 tokens, $0.0001)
+    incorrect: got '.', expected '15'
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:28:36,946][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:37,374][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:37,405][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:37,868][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:37,882][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:38,335][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:38,352][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:38,825][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:38,834][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:39,295][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:39,299][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:39,744][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:39,766][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:40,238][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:40,276][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (3.78s, 10598 tokens, $0.0023)
+    incorrect: got 10, expected 15
+
+Problem 22/30: Problem 22
+  Testing Greedy... [2025-12-07 01:28:41,135][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (0.85s, 360 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:28:41,761][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:42,264][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:43,925][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:44,456][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:44,469][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:44,952][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:44,957][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:45,336][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:45,360][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:46,133][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:46,139][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:46,499][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:46,505][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:46,884][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:46,888][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (5.76s, 10132 tokens, $0.0022)
+    incorrect: got 1., expected 14
+
+Problem 23/30: Problem 23
+  Testing Greedy... [2025-12-07 01:28:48,239][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.35s, 396 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:28:48,651][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:49,148][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:49,152][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:49,509][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:49,515][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:50,068][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:50,074][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:50,444][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:50,452][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:50,992][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:50,998][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:51,407][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:51,416][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:51,835][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:51,847][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (3.61s, 10418 tokens, $0.0022)
+    incorrect: got '.', expected '7'
+
+Problem 24/30: Problem 24
+  Testing Greedy... [2025-12-07 01:28:52,731][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (0.88s, 380 tokens, $0.0001)
+    incorrect: got 4, expected 8
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:28:53,346][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:53,859][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:53,864][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:54,676][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:54,682][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:55,092][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:55,121][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:55,228][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 429 Too Many Requests"
+[2025-12-07 01:28:55,229][openai._base_client][INFO] - Retrying request to /chat/completions in 0.403538 seconds
+[2025-12-07 01:28:55,241][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 429 Too Many Requests"
+[2025-12-07 01:28:55,242][openai._base_client][INFO] - Retrying request to /chat/completions in 0.376225 seconds
+[2025-12-07 01:28:57,135][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:57,166][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:57,647][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:57,652][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:58,158][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:58,163][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:58,609][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:28:58,614][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (5.89s, 9892 tokens, $0.0021)
+    incorrect: got 1., expected 8
+
+Problem 25/30: Problem 25
+  Testing Greedy... [2025-12-07 01:28:59,898][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (1.28s, 379 tokens, $0.0001)
+    incorrect: got 0.75, expected 26
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:29:00,357][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:00,870][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:00,898][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:01,333][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:01,339][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:01,949][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:01,955][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:02,517][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:02,581][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:03,175][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:03,269][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:03,977][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:03,982][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:04,405][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:04,411][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (4.52s, 9892 tokens, $0.0021)
+    incorrect: got '.', expected '26'
+
+Problem 26/30: Problem 26
+  Testing Greedy... [2025-12-07 01:29:05,231][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (0.82s, 407 tokens, $0.0001)
+    incorrect: got 5., expected 2
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:29:05,739][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:06,249][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:06,256][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:06,734][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:06,795][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:07,271][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:07,277][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:07,780][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:07,822][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:08,297][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:08,303][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:08,809][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:08,814][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:09,327][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:09,332][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (4.10s, 10732 tokens, $0.0023)
+    incorrect: got 1, expected 2
+
+Problem 27/30: Problem 27
+  Testing Greedy... [2025-12-07 01:29:10,755][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (1.42s, 407 tokens, $0.0001)
+    incorrect: got 42, expected 243
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:29:11,368][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:11,881][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:11,914][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:12,432][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:12,458][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:13,109][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:13,112][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:13,622][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:13,628][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:14,025][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:14,036][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:14,544][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:14,551][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:15,056][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:15,062][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (4.31s, 10730 tokens, $0.0023)
+    incorrect: got 1., expected 243
+
+Problem 28/30: Problem 28
+  Testing Greedy... [2025-12-07 01:29:15,875][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (0.81s, 355 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:29:16,836][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:17,206][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:17,353][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:17,922][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:17,928][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:18,342][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:18,385][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:18,813][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:18,820][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:19,358][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:19,385][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:19,972][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:19,978][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:20,482][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:20,488][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (4.62s, 10402 tokens, $0.0022)
+    incorrect: got 1, expected 16
+
+Problem 29/30: Problem 29
+  Testing Greedy... [2025-12-07 01:29:21,382][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (0.89s, 337 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:29:21,914][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:22,430][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:22,437][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:22,838][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:22,845][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:23,241][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:23,264][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:23,678][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:23,684][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:24,168][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:24,172][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:24,679][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:24,686][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:25,090][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:25,102][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (3.72s, 10246 tokens, $0.0022)
+    incorrect: got 60, expected 25
+
+Problem 30/30: Problem 30
+  Testing Greedy... [2025-12-07 01:29:25,880][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (0.78s, 410 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=16)... [2025-12-07 01:29:26,438][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:26,937][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:26,942][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:27,445][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:27,451][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:27,882][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:27,888][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:28,269][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:28,287][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:28,709][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:28,724][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:29,186][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:29,191][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:29,552][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 01:29:29,556][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (3.68s, 10822 tokens, $0.0023)
+    incorrect: got '.', expected '104'
+
+📁 Saved predictions to: predictions/gsm8k_grok_4_1_fast_non_reasoning_Greedy.jsonl
+   Total predictions: 30
+
+📁 Saved predictions to: predictions/gsm8k_grok_4_1_fast_non_reasoning_BeamSearch_α4.0_width2_n2_tps16.jsonl
+   Total predictions: 30
+
+==============================================================================================================
+GSM8K BENCHMARK RESULTS
+==============================================================================================================
++-------------+-----------------------------+--------------------------------------+-----------------+----------------+----------------+----------------------+------------------+--------------------+------------+
+| Benchmark   | Model                       | Strategy                             | Pass Rate (%)   |   Avg Time (s) | Total Tokens   |   Avg Tokens/Problem | Total Cost ($)   | Cost/Problem ($)   |   Problems |
++=============+=============================+======================================+=================+================+================+======================+==================+====================+============+
+| GSM8K       | grok-4-1-fast-non-reasoning | Greedy                               | 33.3%           |           1.08 | 11,653         |                388.4 | $0.0034          | $0.0001            |         30 |
++-------------+-----------------------------+--------------------------------------+-----------------+----------------+----------------+----------------------+------------------+--------------------+------------+
+| GSM8K       | grok-4-1-fast-non-reasoning | BeamSearch(α=4.0,width=2,n=2,tps=16) | 0.0%            |           4.73 | 315,070        |              10502.3 | $0.0673          | $0.0022            |         30 |
++-------------+-----------------------------+--------------------------------------+-----------------+----------------+----------------+----------------------+------------------+--------------------+------------+
+====================================================================================================
+
+🏆 Best Overall: Greedy on GSM8K with grok-4-1-fast-non-reasoning
+   Pass Rate: 33.3% | Time: 1.08s | Cost: $0.0001
+
+====================================================================================================
+SUMMARY
+====================================================================================================
+
+Pass Rate Comparison:
+  Greedy                         ################ 33.3%
+  BeamSearch(α=4.0,width=2,n=2,tps=16)  0.0%
+
+Time Efficiency:
+  Greedy                         1.08s avg per problem
+  BeamSearch(α=4.0,width=2,n=2,tps=16) 4.73s avg per problem
+
+Token Usage:
+  Greedy                         388 tokens avg per problem
+  BeamSearch(α=4.0,width=2,n=2,tps=16) 10502 tokens avg per problem
+
+💰 Cost Efficiency:
+  Greedy                         $0.0001 per problem ($0.0034 total)
+  BeamSearch(α=4.0,width=2,n=2,tps=16) $0.0022 per problem ($0.0673 total)
+====================================================================================================
+
