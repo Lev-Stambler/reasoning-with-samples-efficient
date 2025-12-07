@@ -9,6 +9,10 @@ Usage:
     python run_benchmark.py mcmc.alpha=2.0            # Override MCMC alpha
     python run_benchmark.py benchmark.num_problems=20 # More problems
     python run_benchmark.py model.name=grok-3         # Different model
+
+Multirun (batch comparisons):
+    python run_benchmark.py -m benchmark.name=humaneval,swebench
+    python run_benchmark.py -m mcmc.alpha=1.0,1.67,4.0
 """
 import os
 import hydra
@@ -24,6 +28,7 @@ from benchmark_runner import (
     TemperatureSampling,
     BenchmarkMetrics
 )
+from swebench_benchmark import SWEBenchLiteBenchmark, SWEBenchVerifiedBenchmark
 
 # Load environment variables
 load_dotenv()
@@ -31,8 +36,9 @@ load_dotenv()
 # Registry of available benchmarks
 BENCHMARK_REGISTRY = {
     "humaneval": HumanEvalBenchmark,
+    "swebench": SWEBenchLiteBenchmark,  # SWE-bench Lite (300 problems)
+    "swebench-verified": SWEBenchVerifiedBenchmark,  # SWE-bench Verified (500 problems)
     # Add more benchmarks here:
-    # "swebench": SWEBenchBenchmark,
     # "mbpp": MBPPBenchmark,
 }
 
@@ -48,6 +54,8 @@ def print_results_table(metrics_list: list[BenchmarkMetrics]):
         "Avg Time (s)",
         "Total Tokens",
         "Avg Tokens/Problem",
+        "Total Cost ($)",
+        "Cost/Problem ($)",
         "Problems"
     ]
 
@@ -61,6 +69,8 @@ def print_results_table(metrics_list: list[BenchmarkMetrics]):
             f"{metrics.avg_time:.2f}",
             f"{metrics.total_tokens:,}",
             f"{metrics.avg_tokens_per_problem:.1f}",
+            f"${metrics.total_cost:.4f}",
+            f"${metrics.cost_per_problem:.4f}",
             metrics.num_problems
         ])
 
@@ -75,8 +85,28 @@ def print_results_table(metrics_list: list[BenchmarkMetrics]):
 
     if rows:
         best = rows[0]
-        print(f"\nBest Strategy: {best[2]} with {best[3]} pass rate")
-        print(f"   Average time: {best[4]}s | Tokens per problem: {best[6]}")
+        print(f"\n🏆 Best Overall: {best[2]} on {best[0]} with {best[1]}")
+        print(f"   Pass Rate: {best[3]} | Time: {best[4]}s | Cost: {best[8]}")
+
+        # Find best by benchmark
+        benchmarks = set(m.benchmark_name for m in metrics_list)
+        if len(benchmarks) > 1:
+            print(f"\n📊 Best by Benchmark:")
+            for bench in benchmarks:
+                bench_metrics = [m for m in metrics_list if m.benchmark_name == bench]
+                if bench_metrics:
+                    best_bench = max(bench_metrics, key=lambda x: x.pass_rate)
+                    print(f"   {bench}: {best_bench.strategy_name} ({best_bench.model_name}) - {best_bench.pass_rate:.1f}%")
+
+        # Find best by model
+        models = set(m.model_name for m in metrics_list)
+        if len(models) > 1:
+            print(f"\n🤖 Best by Model:")
+            for model in models:
+                model_metrics = [m for m in metrics_list if m.model_name == model]
+                if model_metrics:
+                    best_model = max(model_metrics, key=lambda x: x.pass_rate)
+                    print(f"   {model}: {best_model.strategy_name} on {best_model.benchmark_name} - {best_model.pass_rate:.1f}%")
 
 
 def print_summary(metrics_list: list[BenchmarkMetrics]):
@@ -101,6 +131,11 @@ def print_summary(metrics_list: list[BenchmarkMetrics]):
     print("\nToken Usage:")
     for metrics in sorted(metrics_list, key=lambda x: x.avg_tokens_per_problem):
         print(f"  {metrics.strategy_name:30s} {metrics.avg_tokens_per_problem:.0f} tokens avg per problem")
+
+    # Cost efficiency
+    print("\n💰 Cost Efficiency:")
+    for metrics in sorted(metrics_list, key=lambda x: x.cost_per_problem):
+        print(f"  {metrics.strategy_name:30s} ${metrics.cost_per_problem:.4f} per problem (${metrics.total_cost:.4f} total)")
 
     print("="*100 + "\n")
 
@@ -130,7 +165,7 @@ def main(cfg: DictConfig):
 
     # Initialize benchmark
     if cfg.benchmark.name not in BENCHMARK_REGISTRY:
-        print(f"Error: Unknown benchmark '{cfg.benchmark.name}'")
+        print(f"❌ Error: Unknown benchmark '{cfg.benchmark.name}'")
         print(f"   Available: {', '.join(BENCHMARK_REGISTRY.keys())}")
         return
 
@@ -143,6 +178,7 @@ def main(cfg: DictConfig):
         model_name=cfg.model.name,
         api_key=api_key,
         base_url=cfg.model.base_url,
+        output_dir="predictions"
     )
 
     # Setup strategies based on config
@@ -168,7 +204,7 @@ def main(cfg: DictConfig):
         ))
 
     if not strategies:
-        print("Error: No strategies enabled in configuration")
+        print("❌ Error: No strategies enabled in configuration")
         return
 
     # Run benchmark

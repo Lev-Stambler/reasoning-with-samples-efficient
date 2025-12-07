@@ -12,9 +12,9 @@ model:
 
 # Benchmark configuration
 benchmark:
-  name: humaneval  # Options: humaneval (more to be added)
+  name: humaneval  # Options: humaneval, swebench, swebench-verified
   num_problems: 10
-  max_tokens: 512
+  max_tokens: 3072  # Max tokens for final completion (applied everywhere)
 
 # MCMC sampling configuration
 mcmc:
@@ -29,7 +29,7 @@ mcmc:
 
 # Temperature sampling configuration
 temperature_sampling:
-  enabled: true
+  enabled: false
   temperature: 0.8
 
 # Greedy sampling configuration
