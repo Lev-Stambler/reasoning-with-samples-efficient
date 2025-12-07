@@ -1343,7 +1343,6 @@ class BeamSearchSampling(SamplingStrategy):
             if choice.logprobs and choice.logprobs.content:
                 tokens = [t.token for t in choice.logprobs.content]
                 log_p = [t.logprob for t in choice.logprobs.content]
-                print("AAAA", self.alpha)
                 log_target = [self.alpha * lp for lp in log_p]
             else:
                 tokens = []
