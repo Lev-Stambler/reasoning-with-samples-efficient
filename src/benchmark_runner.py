@@ -13,7 +13,10 @@ import random
 import re
 import numpy as np
 
-from async_openai_client import AsyncOpenAIClient, ChatCompletionResponse
+try:
+    from async_openai_client import AsyncOpenAIClient, ChatCompletionResponse
+except ImportError:
+    from src.async_openai_client import AsyncOpenAIClient, ChatCompletionResponse
 
 
 # Pricing per 1M tokens (input, output) in USD
