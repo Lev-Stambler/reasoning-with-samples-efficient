@@ -9,6 +9,7 @@ from openai import OpenAI
 from datasets import load_dataset
 import random
 import re
+import numpy as np
 
 
 @dataclass
@@ -72,63 +73,249 @@ class GreedySampling(SamplingStrategy):
 
 
 class MCMCSampling(SamplingStrategy):
-    """MCMC-inspired sampling with accept/reject."""
-    
-    def __init__(self, temperature: float = 0.8, mcmc_steps: int = 3):
-        super().__init__(f"MCMC(T={temperature},steps={mcmc_steps})")
-        self.temperature = temperature
+    """
+    MCMC power sampling with Metropolis-Hastings acceptance and partial regeneration.
+
+    Implements sampling from target π(x) = p(x)^α using proposal q(x) = p(x).
+    Based on the paper "Reasoning with Sampling" (https://arxiv.org/abs/2510.14901).
+
+    Algorithm:
+    - Target distribution: π(x) = p(x)^α where α is specified
+    - Proposal distribution: q(x) = p(x) (base model, temperature=1)
+    - Partial regeneration: pick random position, regenerate suffix
+    - Accept/reject using MH ratio on the suffix
+
+    For α=4: proposals with higher log probability are 3x more likely to be accepted.
+    """
+
+    def __init__(
+        self,
+        alpha: float = 4.0,
+        mcmc_steps: int = 10,
+        top_logprobs: int = 5,
+        proposal_temperature: float = 1.0,
+        temperature: float = None,  # Legacy alias for proposal_temperature
+        restrict_to_last_n: int = None,  # Only resample last N blocks (None = disabled)
+        block_size: int = 192,  # Block size B for block-wise generation (paper default)
+        debug: bool = False,  # Print debug info during MCMC
+    ):
+        name = f"MCMC(α={alpha},steps={mcmc_steps},B={block_size})"
+        if restrict_to_last_n is not None:
+            name += f",lastN={restrict_to_last_n}"
+        super().__init__(name)
+        self.alpha = alpha
         self.mcmc_steps = mcmc_steps
-    
-    def generate(self, client: OpenAI, prompt: str, max_tokens: int = 512) -> tuple[str, int, int]:
-        total_prompt_tokens = 0
-        total_completion_tokens = 0
-        
-        # Initial sample
-        initial_response = client.chat.completions.create(
+        self.top_logprobs = top_logprobs
+        # Support legacy 'temperature' parameter as alias for proposal_temperature
+        self.proposal_temperature = temperature if temperature is not None else proposal_temperature
+        self.restrict_to_last_n = restrict_to_last_n
+        self.block_size = block_size
+        self.debug = debug
+
+    def _extract_logprobs_with_tokens(self, response) -> tuple[list[str], list[float], list[float]]:
+        """
+        Extract tokens and logprobs from API response.
+
+        Returns:
+            (tokens, log_p, log_target)
+        """
+        if not response.choices[0].logprobs or not response.choices[0].logprobs.content:
+            return [], [], []
+
+        tokens = [token.token for token in response.choices[0].logprobs.content]
+        log_p = [token.logprob for token in response.choices[0].logprobs.content]
+        log_target = [self.alpha * lp for lp in log_p]
+
+        return tokens, log_p, log_target
+
+    def _sample_full(self, client: OpenAI, prompt: str, max_tokens: int):
+        """Generate a full sample from base model."""
+        response = client.chat.completions.create(
             model=client.default_model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=self.temperature,
+            temperature=self.proposal_temperature,
             max_tokens=max_tokens,
             logprobs=True,
-            top_logprobs=5,
+            top_logprobs=self.top_logprobs,
         )
-        
-        current_text = initial_response.choices[0].message.content
-        current_logprob = sum([
-            token.logprob for token in initial_response.choices[0].logprobs.content
-        ]) if initial_response.choices[0].logprobs else 0
-        
-        total_prompt_tokens += initial_response.usage.prompt_tokens
-        total_completion_tokens += initial_response.usage.completion_tokens
-        
-        # MCMC refinement
-        for _ in range(self.mcmc_steps):
-            proposal_response = client.chat.completions.create(
-                model=client.default_model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=self.temperature * 1.2,
-                max_tokens=max_tokens,
-                logprobs=True,
-                top_logprobs=5,
-            )
-            
-            proposal_text = proposal_response.choices[0].message.content
-            proposal_logprob = sum([
-                token.logprob for token in proposal_response.choices[0].logprobs.content
-            ]) if proposal_response.choices[0].logprobs else 0
-            
-            total_prompt_tokens += proposal_response.usage.prompt_tokens
-            total_completion_tokens += proposal_response.usage.completion_tokens
-            
-            # Metropolis-Hastings acceptance
-            log_ratio = proposal_logprob - current_logprob
-            accept_prob = min(1.0, 2.718 ** log_ratio)
-            
-            if random.random() < accept_prob:
-                current_text = proposal_text
-                current_logprob = proposal_logprob
-        
+
+        text = response.choices[0].message.content
+        tokens, log_p, log_target = self._extract_logprobs_with_tokens(response)
+        # Track if completion ended naturally (EOS) vs hitting max_tokens
+        finished_naturally = response.choices[0].finish_reason == "stop"
+
+        return (
+            text, tokens, log_p, log_target,
+            response.usage.prompt_tokens,
+            response.usage.completion_tokens,
+            finished_naturally
+        )
+
+    def _sample_continuation(self, client: OpenAI, prompt: str, prefix: str, max_tokens: int):
+        """
+        Generate a continuation from a prefix using partial regeneration.
+
+        Sends the prefix as an assistant message and lets the model continue.
+        """
+        response = client.chat.completions.create(
+            model=client.default_model,
+            messages=[
+                {"role": "user", "content": prompt},
+                {"role": "assistant", "content": prefix}  # Continue from here
+            ],
+            temperature=self.proposal_temperature,
+            max_tokens=max_tokens,
+            logprobs=True,
+            top_logprobs=self.top_logprobs,
+        )
+
+        continuation = response.choices[0].message.content
+        tokens, log_p, log_target = self._extract_logprobs_with_tokens(response)
+        finished_naturally = response.choices[0].finish_reason == "stop"
+
+        return (
+            continuation, tokens, log_p, log_target,
+            response.usage.prompt_tokens,
+            response.usage.completion_tokens,
+            finished_naturally
+        )
+
+    def generate(self, client: OpenAI, prompt: str, max_tokens: int = 512) -> tuple[str, int, int]:
+        """
+        Generate completion using MCMC power sampling with block-wise generation.
+
+        Algorithm (matching paper):
+        1. Generate tokens block-by-block (B tokens per block)
+        2. After each block, run MCMC refinement steps
+        3. MCMC uses block-aligned index selection (idx = block_idx * B)
+        4. After all blocks, truncate at EOS if present
+        """
+        total_prompt_tokens = 0
+        total_completion_tokens = 0
+        attempts = 0
+        acceptances = 0
+
+        # Initialize with empty generation
+        tokens_cur = []
+        log_p_cur = []
+        log_target_cur = []
+
+        # Calculate number of blocks to generate
+        num_blocks_to_generate = max_tokens // self.block_size
+        if num_blocks_to_generate < 1:
+            num_blocks_to_generate = 1
+
+        if self.debug:
+            print(f"[MCMC] Block-wise generation: {num_blocks_to_generate} blocks of {self.block_size} tokens")
+
+        # Generate block by block
+        for block_num in range(num_blocks_to_generate):
+            # Generate next block
+            prefix = "".join(tokens_cur) if tokens_cur else ""
+
+            if block_num == 0:
+                # First block: use _sample_full (no prefix)
+                block_text, block_tokens, block_log_p, block_log_target, pt, ct, _ = self._sample_full(
+                    client, prompt, self.block_size
+                )
+            else:
+                # Subsequent blocks: continue from prefix
+                block_text, block_tokens, block_log_p, block_log_target, pt, ct, _ = self._sample_continuation(
+                    client, prompt, prefix, self.block_size
+                )
+
+            total_prompt_tokens += pt
+            total_completion_tokens += ct
+
+            # Extend current state with new block
+            tokens_cur.extend(block_tokens)
+            log_p_cur.extend(block_log_p)
+            log_target_cur.extend(block_log_target)
+
+            if self.debug:
+                print(f"[MCMC] Block {block_num+1}/{num_blocks_to_generate}: generated {len(block_tokens)} tokens, total={len(tokens_cur)}")
+
+            # Run MCMC refinement steps on current state
+            for step in range(self.mcmc_steps):
+                # Block-aligned index selection
+                num_complete_blocks = len(tokens_cur) // self.block_size
+                if num_complete_blocks < 2:
+                    # Need at least 2 blocks to do partial regeneration
+                    if self.debug:
+                        print(f"[MCMC]   Step {step+1}: Skipping, only {num_complete_blocks} complete blocks")
+                    continue
+
+                attempts += 1
+
+                # Pick random block boundary (keep at least first block)
+                # If restrict_to_last_n is set, only resample from last N blocks
+                if self.restrict_to_last_n is not None:
+                    min_block = max(1, num_complete_blocks - self.restrict_to_last_n)
+                else:
+                    min_block = 1
+
+                # Check if we have a valid range
+                if min_block > num_complete_blocks - 1:
+                    if self.debug:
+                        print(f"[MCMC]   Step {step+1}: Skipping, restrict_to_last_n={self.restrict_to_last_n} too small")
+                    continue
+
+                block_idx = random.randint(min_block, num_complete_blocks - 1)
+                idx = block_idx * self.block_size
+
+                # Prefix to keep (as text)
+                prefix = "".join(tokens_cur[:idx])
+
+                # Target length for proposal (same as current)
+                target_len = len(tokens_cur) - idx
+
+                # Generate new suffix
+                new_suffix, tokens_prop, log_p_prop, log_target_prop, pt, ct, _ = self._sample_continuation(
+                    client, prompt, prefix, target_len
+                )
+                total_prompt_tokens += pt
+                total_completion_tokens += ct
+
+                # Current suffix logprobs (from idx onwards)
+                log_p_cur_suffix = log_p_cur[idx:]
+                log_target_cur_suffix = log_target_cur[idx:]
+
+                # MH acceptance ratio for suffixes only
+                # log A = log(π(suffix')/π(suffix)) + log(q(suffix)/q(suffix'))
+                log_r = (
+                    sum(log_target_prop) + sum(log_p_cur_suffix)
+                    - sum(log_target_cur_suffix) - sum(log_p_prop)
+                )
+
+                # Accept with probability min(1, exp(log_r))
+                accepted = np.random.rand() < np.exp(log_r)
+
+                if self.debug:
+                    status = "ACCEPT" if accepted else "REJECT"
+                    print(f"[MCMC]   Step {step+1}: block_idx={block_idx}, idx={idx}, log_r={log_r:.3f}, {status}")
+
+                if accepted:
+                    acceptances += 1
+                    # Update current state with new suffix
+                    tokens_cur = tokens_cur[:idx] + tokens_prop
+                    log_p_cur = log_p_cur[:idx] + log_p_prop
+                    log_target_cur = log_target_cur[:idx] + log_target_prop
+
+        # Reconstruct text from final tokens
+        current_text = "".join(tokens_cur)
+
+        # Store acceptance ratio for diagnostics
+        self._last_acceptance_ratio = acceptances / attempts if attempts > 0 else 0.0
+
+        if self.debug:
+            print(f"[MCMC] Final: {len(tokens_cur)} tokens, acceptance={self._last_acceptance_ratio:.1%}")
+            print(f"[MCMC] Final text: {current_text[:200]}..." if len(current_text) > 200 else f"[MCMC] Final text: {current_text}")
+
         return current_text, total_prompt_tokens, total_completion_tokens
+
+    def get_acceptance_ratio(self) -> float:
+        """Return the acceptance ratio from the last generate() call."""
+        return getattr(self, '_last_acceptance_ratio', 0.0)
 
 
 class TemperatureSampling(SamplingStrategy):

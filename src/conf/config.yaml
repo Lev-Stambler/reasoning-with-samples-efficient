@@ -1,0 +1,43 @@
+# Hydra configuration for sampling benchmarks
+# Usage: python run_benchmark.py [overrides]
+# Example: python run_benchmark.py mcmc.steps=5 mcmc.alpha=2.0 benchmark.num_problems=20
+
+defaults:
+  - _self_
+
+# Model configuration
+model:
+  name: grok-2-1212
+  base_url: https://api.x.ai/v1
+
+# Benchmark configuration
+benchmark:
+  name: humaneval  # Options: humaneval (more to be added)
+  num_problems: 10
+  max_tokens: 512
+
+# MCMC sampling configuration
+mcmc:
+  enabled: true
+  alpha: 1.67                    # Power factor for target distribution pi(x) = p(x)^alpha
+  steps: 10                     # Number of MCMC refinement steps
+  top_logprobs: 5               # Number of top log probabilities to retrieve
+  proposal_temperature: 0.59     # Temperature for proposal distribution, should be alpha^(-1)
+  restrict_to_last_n: null      # Only resample last N blocks (null = disabled, int = enabled)
+  block_size: 192                # Block size B for block-wise generation (paper default)
+  debug: true                   # Print debug info during MCMC (acceptance/rejection, log_r, etc.)
+
+# Temperature sampling configuration
+temperature_sampling:
+  enabled: true
+  temperature: 0.8
+
+# Greedy sampling configuration
+greedy:
+  enabled: true
+
+# Output configuration
+output:
+  verbose: true
+  save_results: false
+  results_dir: ./results
