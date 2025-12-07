@@ -1461,19 +1461,18 @@ class BeamSearchSampling(SamplingStrategy):
         Async version of generate() with parallel beam expansion.
 
         Algorithm:
-        1. Start with empty beam
+        1. Start with beam_width INDEPENDENT samples (not 1 empty beam)
         2. For each beam, generate n_per_beam continuations IN PARALLEL (beam branching)
         3. Score all beam_width × n_per_beam candidates using p^α
         4. Keep top beam_width beams by score
         5. Repeat until max_tokens or all beams finish
 
-        With beam_width=2, n_per_beam=2: generates 4 candidates per iteration in parallel.
+        With beam_width=10, n_per_beam=3: generates 30 candidates per iteration in parallel.
         """
         total_prompt_tokens = 0
         total_completion_tokens = 0
 
-        # Initialize beams
-        active_beams: list[Beam] = [Beam()]
+        # Will be initialized below with beam_width independent samples
         completed_beams: list[tuple[float, Beam]] = []  # (score, beam) pairs
 
         num_expansions = 0
@@ -1485,9 +1484,37 @@ class BeamSearchSampling(SamplingStrategy):
             print(f"[BeamSearch] TRUE beam search (ASYNC): beam_width={self.beam_width}, n_per_beam={self.n_per_beam}")
             print(f"[BeamSearch] Generating {num_blocks} blocks of {self.tokens_per_step} tokens")
             print(f"[BeamSearch] α={self.alpha}, length_penalty={self.length_penalty}")
+
+        # INITIALIZATION: Generate beam_width INDEPENDENT samples to start with diversity
+        if self.debug:
+            print(f"[BeamSearch] Initializing with {self.beam_width} independent samples...")
+
+        init_results, init_pt, init_ct = await self._sample_multiple_continuations_async(
+            client, prompt, "", self.tokens_per_step, self.beam_width
+        )
+        total_prompt_tokens += init_pt
+        total_completion_tokens += init_ct
+
+        # Convert to Beam objects and score
+        scored_init: list[tuple[float, Beam]] = []
+        for text, tokens, log_p, log_target, finished in init_results:
+            beam = Beam(text, tokens, log_p, log_target, finished)
+            score = beam.score(self.use_length_penalty, self.length_penalty)
+            scored_init.append((score, beam))
+
+        # Sort by score and separate completed vs active
+        scored_init.sort(key=lambda x: x[0], reverse=True)
+        completed_beams = [(s, b) for s, b in scored_init if b.finished]
+        active_beams: list[Beam] = [b for s, b in scored_init if not b.finished][:self.beam_width]
+
+        if self.debug:
+            print(f"[BeamSearch] Initialized {len(active_beams)} active beams, {len(completed_beams)} already completed")
+            if scored_init:
+                print(f"[BeamSearch] Initial best score: {scored_init[0][0]:.4f}")
             print(f"[BeamSearch] Each iteration: {len(active_beams)} beams × {self.n_per_beam} samples = candidates (PARALLEL)")
 
-        for block_num in range(num_blocks):
+        # Start from block 1 since block 0 was the initialization
+        for block_num in range(1, num_blocks):
             if not active_beams:
                 break
 
@@ -1501,7 +1528,7 @@ class BeamSearchSampling(SamplingStrategy):
             num_expansions += 1
 
             if self.debug:
-                print(f"[BeamSearch] Block {block_num+1}: Generated {len(candidate_beams)} candidates (parallel)")
+                print(f"[BeamSearch] Block {block_num+1}/{num_blocks}: Generated {len(candidate_beams)} candidates (parallel)")
 
             # Score all candidates
             scored_beams: list[tuple[float, Beam]] = [
