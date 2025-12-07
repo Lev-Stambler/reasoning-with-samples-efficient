@@ -707,13 +707,13 @@ class ParallelMCMCSampling(SamplingStrategy):
             # Run MCMC refinement steps on current state
             for step in range(self.mcmc_steps):
                 num_complete_blocks = len(tokens_cur) // self.block_size
-                if num_complete_blocks < 1:
-                    if self.debug:
-                        print(f"[ParallelMCMC] Step {step+1}: Skipping, not enough tokens for a complete block")
-                    break
+                # if num_complete_blocks < 1:
+                    # if self.debug:
+                        # print(f"[ParallelMCMC] Step {step+1}: Skipping, not enough tokens for a complete block")
+                    # break
 
                 # Block-aligned index selection (keep at least first block)
-                block_idx = random.randint(0, num_complete_blocks - 1)
+                block_idx = random.randint(0, num_complete_blocks) if num_complete_blocks > 0 else 0
                 pivot_idx = block_idx * self.block_size
 
                 prefix = "".join(tokens_cur[:pivot_idx])

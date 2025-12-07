@@ -72,10 +72,10 @@ mcmc:
 # Based on: "A general construction for parallelizing Metropolis-Hastings algorithms" (Calderhead 2014, PNAS)
 mcmc_parallel:
   enabled: false
-  alpha: 4.0 # Power factor for target distribution pi(x) = p(x)^alpha
+  alpha: 6.0 # Power factor for target distribution pi(x) = p(x)^alpha
   steps: 2 # MCMC refinement steps per block (1 is typical with N parallel proposals)
   top_logprobs: 15 # Number of top log probabilities to retrieve
-  proposal_temperature: 0.25 # Temperature for proposal distribution, should be alpha^(-1)
+  proposal_temperature: 0.18 # Temperature for proposal distribution, should be alpha^(-1)
   block_size: 192 # Block size B for block-wise generation (match mcmc.block_size)
   debug: true # Print debug info
   length_normalize: false # If true, normalize log_target by length (removes length penalty)
