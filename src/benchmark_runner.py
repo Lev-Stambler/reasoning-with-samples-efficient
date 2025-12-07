@@ -716,7 +716,7 @@ class ParallelMCMCSampling(SamplingStrategy):
                     # break
 
                 # Block-aligned index selection (keep at least first block)
-                block_idx = random.randint(0, num_complete_blocks) if num_complete_blocks > 0 else 0
+                block_idx = random.randint(0, num_complete_blocks - 1) if num_complete_blocks > 0 else 0
                 pivot_idx = block_idx * self.block_size
 
                 prefix = "".join(tokens_cur[:pivot_idx])
