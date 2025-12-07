@@ -65,18 +65,65 @@ with st.sidebar:
     
     # API Configuration
     st.subheader("API Settings")
-    api_key = st.text_input(
-        "X.AI API Key",
-        value=os.getenv("XAI_API_KEY", ""),
-        type="password",
-        help="Get your API key from https://console.x.ai/"
+    
+    # Provider selection
+    provider = st.selectbox(
+        "Provider",
+        ["X.AI", "RunPod (Qwen 3.8B)", "vLLM (Local)", "Ollama"],
+        index=1,  # Default to RunPod
+        help="Select your model provider"
     )
     
-    model_name = st.selectbox(
-        "Model",
-        ["grok-2-1212", "grok-beta", "grok-2-latest"],
-        index=0
-    )
+    # Provider-specific configuration
+    if provider == "X.AI":
+        api_key = st.text_input(
+            "X.AI API Key",
+            value=os.getenv("XAI_API_KEY", ""),
+            type="password",
+            help="Get your API key from https://console.x.ai/"
+        )
+        base_url = "https://api.x.ai/v1"
+        model_name = st.selectbox(
+            "Model",
+            ["grok-2-1212", "grok-beta", "grok-2-latest"],
+            index=0
+        )
+    elif provider == "RunPod (Qwen 3.8B)":
+        api_key = "runpod"  # RunPod doesn't require API key for vLLM
+        base_url = st.text_input(
+            "RunPod Endpoint URL",
+            value=os.getenv("RUNPOD_ENDPOINT", "https://44dss5ov9819bi-8000.proxy.runpod.net/v1"),
+            help="Your RunPod vLLM endpoint URL"
+        )
+        model_name = st.text_input(
+            "Model Name",
+            value="Qwen/Qwen3-8B",
+            help="Model name on RunPod (e.g., Qwen/Qwen3-8B)"
+        )
+    elif provider == "vLLM (Local)":
+        api_key = "vllm"
+        base_url = st.text_input(
+            "vLLM Endpoint URL",
+            value="http://localhost:8000/v1",
+            help="Your local vLLM server endpoint"
+        )
+        model_name = st.text_input(
+            "Model Name",
+            value="HuggingFaceTB/SmolLM2-1.7B-Instruct",
+            help="Model name served by vLLM"
+        )
+    else:  # Ollama
+        api_key = "ollama"
+        base_url = st.text_input(
+            "Ollama Endpoint URL",
+            value="http://localhost:11434/v1",
+            help="Your Ollama server endpoint"
+        )
+        model_name = st.text_input(
+            "Model Name",
+            value="smollm2:1.7b",
+            help="Model name in Ollama"
+        )
     
     max_tokens = st.slider(
         "Max Tokens",
@@ -103,10 +150,17 @@ with st.sidebar:
     This demo compares different sampling strategies from the paper 
     [**Reasoning with Sampling**](https://arxiv.org/abs/2510.14901).
     
+    **Sampling Methods:**
     - **Greedy**: Deterministic (temp=0)
     - **MCMC**: Power sampling with Metropolis-Hastings
     - **Beam Search**: Best-first search across multiple candidates
     - **Temperature**: Standard sampling (optional)
+    
+    **Providers:**
+    - **X.AI**: Grok models via X.AI API
+    - **RunPod**: Self-hosted Qwen 3.8B on RunPod
+    - **vLLM (Local)**: Local vLLM server
+    - **Ollama**: Local Ollama server
     """)
 
 # Main content area
@@ -126,12 +180,17 @@ if 'results' not in st.session_state:
     st.session_state.results = {}
 
 if run and prompt.strip():
-    if not api_key:
+    if provider == "X.AI" and not api_key:
         st.error("⚠️ Please enter your X.AI API key in the sidebar")
+    elif not base_url:
+        st.error("⚠️ Please enter the endpoint URL for your provider")
     else:
         # Initialize client
-        client = OpenAI(api_key=api_key, base_url="https://api.x.ai/v1")
+        client = OpenAI(api_key=api_key, base_url=base_url)
         client.default_model = model_name
+        
+        # Display provider info
+        st.info(f"🔧 Using {provider}: {model_name} at {base_url}")
         
         # Build strategies list to determine layout
         strategy_configs = []
@@ -216,28 +275,54 @@ if run and prompt.strip():
                             strategy_name = f"MCMC (α={alpha}, steps={mcmc_steps})"
                             
                         elif method_type == "beam_search":
-                            num_beams = st.slider(
-                                "Number of Beams",
+                            beam_width = st.slider(
+                                "Beam Width",
                                 min_value=2,
                                 max_value=10,
                                 value=4,
                                 step=1,
-                                help="Number of parallel sequences to generate",
-                                key=f"num_beams_{idx}"
+                                help="Number of parallel beams to maintain",
+                                key=f"beam_width_{idx}"
                             )
                             
-                            beam_temperature = st.slider(
-                                "Beam Temperature",
+                            alpha = st.slider(
+                                "Alpha (α)",
+                                min_value=1.0,
+                                max_value=8.0,
+                                value=4.0,
+                                step=0.5,
+                                help="Power factor for beam scoring",
+                                key=f"beam_alpha_{idx}"
+                            )
+                            
+                            proposal_temperature = st.slider(
+                                "Proposal Temperature",
                                 min_value=0.1,
                                 max_value=2.0,
                                 value=0.7,
                                 step=0.1,
-                                help="Temperature for beam search sampling",
-                                key=f"beam_temp_{idx}"
+                                help="Temperature for beam proposals",
+                                key=f"beam_proposal_temp_{idx}"
                             )
                             
-                            strategy = BeamSearchSampling(num_beams=num_beams, temperature=beam_temperature)
-                            strategy_name = f"Beam Search (beams={num_beams})"
+                            tokens_per_step = st.slider(
+                                "Tokens per Step",
+                                min_value=32,
+                                max_value=256,
+                                value=128,
+                                step=32,
+                                help="Tokens to generate per beam expansion",
+                                key=f"tokens_per_step_{idx}"
+                            )
+                            
+                            strategy = BeamSearchSampling(
+                                alpha=alpha,
+                                beam_width=beam_width,
+                                proposal_temperature=proposal_temperature,
+                                tokens_per_step=tokens_per_step,
+                                supports_n_param=True  # Most providers support this
+                            )
+                            strategy_name = f"Beam Search (width={beam_width}, α={alpha})"
                             
                         elif method_type == "temperature":
                             temperature = st.slider(

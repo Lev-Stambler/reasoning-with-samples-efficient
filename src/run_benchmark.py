@@ -190,6 +190,16 @@ def main(cfg: DictConfig):
         api_key = "vllm"  # vLLM doesn't require API key
         supports_n_param = True  # vLLM supports n parameter for batching
         print(f"Using vLLM: {model_name} at {base_url}")
+    elif provider == "runpod":
+        model_name = cfg.model.runpod.name
+        base_url = cfg.model.runpod.base_url or os.getenv("RUNPOD_ENDPOINT")
+        api_key = "runpod"  # RunPod vLLM doesn't require API key
+        supports_n_param = True  # RunPod vLLM supports n parameter for batching
+        if not base_url:
+            print("Error: Please set RUNPOD_ENDPOINT environment variable")
+            print("   Or set model.runpod.base_url in config")
+            return
+        print(f"Using RunPod: {model_name} at {base_url}")
     else:  # xai (default)
         model_name = cfg.model.xai.name
         base_url = cfg.model.xai.base_url
