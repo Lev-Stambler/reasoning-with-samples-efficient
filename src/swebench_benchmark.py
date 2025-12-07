@@ -125,6 +125,14 @@ Please provide a code patch to fix this issue. Format your patch as a unified di
         # If no code blocks, return the whole response
         return response.strip()
     
+    def format_prediction(self, problem: Dict, completion: str) -> Dict:
+        """Format prediction for SWE-bench evaluation."""
+        return {
+            "instance_id": problem["instance_id"],
+            "model_patch": completion,
+            "model_name_or_path": "custom"
+        }
+    
     def check_correctness(self, problem: Dict, completion: str) -> tuple[bool, str]:
         """
         Check if the completion is correct.

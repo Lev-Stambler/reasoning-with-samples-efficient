@@ -296,6 +296,7 @@ def main():
                 benchmark=benchmark,
                 model_name=model_name,
                 api_key=api_key,
+                output_dir="predictions"
             )
             
             # Set max_tokens based on benchmark if not specified
@@ -306,11 +307,13 @@ def main():
                 else:
                     max_tokens = 512
             
-            # Run single benchmark
+            # Run single benchmark with run_id for unique filenames
+            run_id = f"run{run_idx}"
             metrics_dict = runner.run_benchmark(
                 strategies=[strategy],
                 num_problems=num_problems,
-                max_tokens=max_tokens
+                max_tokens=max_tokens,
+                run_id=run_id
             )
             
             # Collect metrics
