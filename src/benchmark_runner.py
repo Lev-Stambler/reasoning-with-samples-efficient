@@ -278,6 +278,7 @@ class MCMCSampling(SamplingStrategy):
                     client, prompt, self.block_size
                 )
             else:
+                pass
                 # Subsequent blocks: continue from prefix
                 block_text, block_tokens, block_log_p, block_log_target, pt, ct, _ = self._sample_continuation(
                     client, prompt, prefix, self.block_size
@@ -298,12 +299,6 @@ class MCMCSampling(SamplingStrategy):
             for step in range(self.mcmc_steps):
                 # Block-aligned index selection
                 num_complete_blocks = len(tokens_cur) // self.block_size
-                if num_complete_blocks < 2:
-                    # Need at least 2 blocks to do partial regeneration
-                    if self.debug:
-                        print(f"[MCMC]   Step {step+1}: Skipping, only {num_complete_blocks} complete blocks")
-                    continue
-
                 attempts += 1
 
                 # Pick random block boundary (keep at least first block)
@@ -311,10 +306,11 @@ class MCMCSampling(SamplingStrategy):
                 if self.restrict_to_last_n is not None:
                     min_block = max(1, num_complete_blocks - self.restrict_to_last_n)
                 else:
-                    min_block = 1
+                    min_block = 0
 
                 # Check if we have a valid range
                 if min_block > num_complete_blocks - 1:
+                    assert False, "This should not happen"
                     if self.debug:
                         print(f"[MCMC]   Step {step+1}: Skipping, restrict_to_last_n={self.restrict_to_last_n} too small")
                     continue
@@ -326,7 +322,7 @@ class MCMCSampling(SamplingStrategy):
                 prefix = "".join(tokens_cur[:idx])
 
                 # Target length for proposal (same as current)
-                target_len = len(tokens_cur) - idx
+                target_len = len(tokens_cur) - idx + self.block_size
 
                 # Generate new suffix
                 new_suffix, tokens_prop, log_p_prop, log_target_prop, pt, ct, _ = self._sample_continuation(
@@ -335,9 +331,10 @@ class MCMCSampling(SamplingStrategy):
                 total_prompt_tokens += pt
                 total_completion_tokens += ct
 
-                # Current suffix logprobs (from idx onwards)
-                log_p_cur_suffix = log_p_cur[idx:]
-                log_target_cur_suffix = log_target_cur[idx:]
+                # Slice current suffix to match proposal length (handles variable-length proposals)
+                prop_len = len(tokens_prop)
+                log_p_cur_suffix = log_p_cur[idx:idx + prop_len]
+                log_target_cur_suffix = log_target_cur[idx:idx + prop_len]
 
                 # MH acceptance ratio for suffixes only
                 # log A = log(π(suffix')/π(suffix)) + log(q(suffix)/q(suffix'))
@@ -924,7 +921,9 @@ class BenchmarkRunner:
         model_name: str,
         api_key: str,
         base_url: str = "https://api.x.ai/v1",
-        output_dir: str = "predictions"
+        output_dir: str = "predictions",
+        prompt_prefix: str = "",
+        prompt_suffix: str = ""
     ):
         self.benchmark = benchmark
         self.model_name = model_name
@@ -932,6 +931,8 @@ class BenchmarkRunner:
         self.client.default_model = model_name
         self.results: List[SamplingResult] = []
         self.output_dir = output_dir
+        self.prompt_prefix = prompt_prefix
+        self.prompt_suffix = prompt_suffix
         
         # Create output directory
         os.makedirs(output_dir, exist_ok=True)
@@ -948,6 +949,12 @@ class BenchmarkRunner:
         
         # Format prompt using benchmark
         prompt = self.benchmark.format_prompt(problem)
+        
+        # Apply custom prefix/suffix if provided
+        if self.prompt_prefix:
+            prompt = self.prompt_prefix + prompt
+        if self.prompt_suffix:
+            prompt = prompt + self.prompt_suffix
         
         # Generate completion
         start_time = time.time()

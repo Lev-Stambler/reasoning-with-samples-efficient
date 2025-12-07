@@ -190,7 +190,9 @@ def main(cfg: DictConfig):
         model_name=cfg.model.name,
         api_key=api_key,
         base_url=cfg.model.base_url,
-        output_dir="predictions"
+        output_dir="predictions",
+        prompt_prefix=cfg.prompt.prefix,
+        prompt_suffix=cfg.prompt.suffix
     )
 
     # Setup strategies based on config
