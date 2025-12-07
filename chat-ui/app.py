@@ -12,6 +12,7 @@ sys.path.insert(0, str(parent_dir))
 from src.benchmark_runner import (
     GreedySampling,
     MCMCSampling,
+    ParallelMCMCSampling,
     TemperatureSampling,
     BeamSearchSampling,
 )
@@ -141,6 +142,18 @@ with st.sidebar:
     
     use_greedy = st.checkbox("Greedy Decoding", value=True)
     use_mcmc = st.checkbox("MCMC Power Sampling", value=True)
+    
+    # MCMC variant selection (only shown if MCMC is enabled)
+    if use_mcmc:
+        mcmc_variant = st.radio(
+            "MCMC Variant",
+            ["Parallel MCMC (Faster)", "Serial MCMC"],
+            index=0,  # Default to Parallel
+            help="Parallel MCMC generates multiple proposals simultaneously (faster)"
+        )
+    else:
+        mcmc_variant = "Parallel MCMC (Faster)"  # Default when not shown
+    
     use_beam_search = st.checkbox("Beam Search", value=True)
     use_temperature = st.checkbox("Temperature Sampling", value=False)
     
@@ -153,6 +166,8 @@ with st.sidebar:
     **Sampling Methods:**
     - **Greedy**: Deterministic (temp=0)
     - **MCMC**: Power sampling with Metropolis-Hastings
+      - **Parallel** (default): Multiple proposals simultaneously (faster)
+      - **Serial**: One proposal at a time (slower but simpler)
     - **Beam Search**: Best-first search across multiple candidates
     - **Temperature**: Standard sampling (optional)
     
@@ -197,7 +212,10 @@ if run and prompt.strip():
         if use_greedy:
             strategy_configs.append(("Greedy Decoding", "greedy", None))
         if use_mcmc:
-            strategy_configs.append(("MCMC Power Sampling", "mcmc", None))
+            if mcmc_variant == "Parallel MCMC (Faster)":
+                strategy_configs.append(("Parallel MCMC", "mcmc_parallel", None))
+            else:
+                strategy_configs.append(("Serial MCMC", "mcmc", None))
         if use_beam_search:
             strategy_configs.append(("Beam Search", "beam_search", None))
         if use_temperature:
@@ -272,7 +290,74 @@ if run and prompt.strip():
                                 proposal_temperature=proposal_temperature,
                                 debug=debug_mcmc
                             )
-                            strategy_name = f"MCMC (α={alpha}, steps={mcmc_steps})"
+                            strategy_name = f"Serial MCMC (α={alpha}, steps={mcmc_steps})"
+                        
+                        elif method_type == "mcmc_parallel":
+                            alpha = st.slider(
+                                "Alpha (α)",
+                                min_value=1.0,
+                                max_value=8.0,
+                                value=4.0,
+                                step=0.5,
+                                help="Power for target distribution p^α",
+                                key=f"alpha_{idx}"
+                            )
+                            
+                            mcmc_steps = st.slider(
+                                "MCMC Steps",
+                                min_value=1,
+                                max_value=10,
+                                value=1,
+                                step=1,
+                                help="Number of MCMC refinement steps per block (1 is typical for parallel)",
+                                key=f"mcmc_steps_{idx}"
+                            )
+                            
+                            block_size = st.slider(
+                                "Block Size",
+                                min_value=16,
+                                max_value=256,
+                                value=32,
+                                step=16,
+                                help="Block size for block-wise generation",
+                                key=f"block_size_{idx}"
+                            )
+                            
+                            num_proposals = st.slider(
+                                "Number of Proposals",
+                                min_value=2,
+                                max_value=20,
+                                value=10,
+                                step=1,
+                                help="Number of parallel proposals per MCMC step",
+                                key=f"num_proposals_{idx}"
+                            )
+                            
+                            proposal_temperature = st.slider(
+                                "Proposal Temperature",
+                                min_value=0.1,
+                                max_value=2.0,
+                                value=0.25,
+                                step=0.05,
+                                help="Temperature for MCMC proposal distribution",
+                                key=f"proposal_temp_{idx}"
+                            )
+                            
+                            debug_mcmc = st.checkbox("Debug MCMC", value=False, key=f"debug_{idx}")
+                            
+                            strategy = ParallelMCMCSampling(
+                                alpha=alpha,
+                                mcmc_steps=mcmc_steps,
+                                block_size=block_size,
+                                num_proposals=num_proposals,
+                                proposal_temperature=proposal_temperature,
+                                debug=debug_mcmc,
+                                api_key=api_key,
+                                base_url=base_url,
+                                model=model_name,
+                                supports_n_param=True
+                            )
+                            strategy_name = f"Parallel MCMC (α={alpha}, N={num_proposals})"
                             
                         elif method_type == "beam_search":
                             beam_width = st.slider(
