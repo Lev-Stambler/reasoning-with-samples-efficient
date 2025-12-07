@@ -15,6 +15,8 @@ Multirun (batch comparisons):
     python run_benchmark.py -m mcmc.alpha=1.0,1.67,4.0
 """
 import os
+import random
+import numpy as np
 import hydra
 from omegaconf import DictConfig, OmegaConf
 from dotenv import load_dotenv
@@ -175,6 +177,13 @@ def main(cfg: DictConfig):
 
     if cfg.output.verbose:
         print_config(cfg)
+
+    # Set random seed for reproducibility
+    if cfg.benchmark.get("seed") is not None:
+        seed = cfg.benchmark.seed
+        random.seed(seed)
+        np.random.seed(seed)
+        print(f"🎲 Random seed set to: {seed}\n")
 
     # Select model config based on provider
     provider = cfg.model.get("provider", "xai")
