@@ -294,10 +294,10 @@ def load_model_and_tokenizer(model_name, device, local_files_only=False, trust_r
     if local_files_only:
         config = transformers.AutoConfig.from_pretrained(model_str, trust_remote_code=trust_remote_code, local_files_only=True)
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_str, trust_remote_code=trust_remote_code, local_files_only=True)
-        hf_model = transformers.AutoModelForCausalLM.from_pretrained(model_str, config=config, torch_dtype="auto", device_map="auto", trust_remote_code=trust_remote_code, local_files_only=True).to(device)
+        hf_model = transformers.AutoModelForCausalLM.from_pretrained(model_str, config=config, torch_dtype="auto", device_map="auto", trust_remote_code=trust_remote_code, local_files_only=True)
     else:
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_str, trust_remote_code=trust_remote_code)
-        hf_model = transformers.AutoModelForCausalLM.from_pretrained(model_str, torch_dtype="auto", device_map="auto", trust_remote_code=trust_remote_code).to(device)
+        hf_model = transformers.AutoModelForCausalLM.from_pretrained(model_str, torch_dtype="auto", device_map="auto", trust_remote_code=trust_remote_code)
 
     autoreg_sampler = AutoregressiveSampler(hf_model, tokenizer, device)
     return hf_model, tokenizer, autoreg_sampler

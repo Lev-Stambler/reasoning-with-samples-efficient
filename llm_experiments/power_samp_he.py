@@ -71,7 +71,7 @@ if __name__ == "__main__":
     start = 41*args.batch_idx
     end = 41*(args.batch_idx+1)
 
-    for problem, data in tqdm(enumerate(dataset[start:end]), desc = "Benchmark on HumanEval"):
+    for problem, data in tqdm(enumerate(dataset.select(range(start, min(end, len(dataset))))), desc = "Benchmark on HumanEval"):
         prompt = data["prompt"]
         task_id = data["task_id"]
 

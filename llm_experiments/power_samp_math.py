@@ -72,7 +72,7 @@ if __name__ == "__main__":
     start = 100*args.batch_idx
     end = 100*(args.batch_idx+1)
 
-    for problem, data in tqdm(enumerate(dataset[start:end]), desc = "Benchmark on MATH"):
+    for problem, data in tqdm(enumerate(dataset.select(range(start, min(end, len(dataset))))), desc = "Benchmark on MATH"):
         question = data["prompt"]
         print(question)
         answer = data["answer"]

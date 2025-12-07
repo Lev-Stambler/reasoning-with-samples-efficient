@@ -1,3 +1,4 @@
 .sync-to-remote.sh
 .venv
 .claude
+uv.lock

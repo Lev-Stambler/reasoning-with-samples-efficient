@@ -75,7 +75,7 @@ if __name__ == "__main__":
     end = 33*(args.batch_idx+1)
 
 
-    for problem, data in tqdm(enumerate(dataset[start:end]), desc = "Benchmark on GPQA"):
+    for problem, data in tqdm(enumerate(dataset.select(range(start, min(end, len(dataset))))), desc = "Benchmark on GPQA"):
 
         choices = [data["Incorrect Answer 1"], data["Incorrect Answer 2"], data["Incorrect Answer 3"]]
         random.shuffle(choices)
