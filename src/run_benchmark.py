@@ -276,6 +276,8 @@ def main(cfg: DictConfig):
             model=model_name,
             supports_n_param=supports_n_param,
             seed=api_seed,
+            use_length_penalty=cfg.mcmc_parallel.use_length_penalty,
+            length_penalty=cfg.mcmc_parallel.length_penalty,
         ))
 
     if getattr(cfg.beam_search, 'enabled', False):

@@ -569,8 +569,8 @@ class ParallelMCMCSampling(SamplingStrategy):
         alpha: float = 1.67,
         mcmc_steps: int = 5,
         top_logprobs: int = 5,
-        proposal_temperature: float = 1.0, # Usually want higher temp for proposals to explore
-        block_size: int = 16, # Smaller blocks work better for MCMC
+        proposal_temperature: float = 1.0,  # Usually want higher temp for proposals to explore
+        block_size: int = 16,  # Smaller blocks work better for MCMC
         debug: bool = False,
         num_proposals: int = 4,
         max_concurrent: int = 100,
@@ -581,6 +581,8 @@ class ParallelMCMCSampling(SamplingStrategy):
         model: str = "gpt-4o-mini",
         supports_n_param: bool = True,  # Whether API supports n parameter for batching
         seed: int = None,  # Random seed for API reproducibility
+        use_length_penalty: bool = False,  # Whether to apply length normalization
+        length_penalty: float = 0.6,  # Length penalty exponent (like beam search)
     ):
         name = f"ParallelMCMC(α={alpha},steps={mcmc_steps},B={block_size},N={num_proposals})"
         super().__init__(name, seed=seed)
@@ -598,6 +600,8 @@ class ParallelMCMCSampling(SamplingStrategy):
         self.base_url = base_url
         self.model = model
         self.supports_n_param = supports_n_param
+        self.use_length_penalty = use_length_penalty
+        self.length_penalty = length_penalty
 
     def _extract_logprobs_completion(self, choice: Any) -> Tuple[List[str], List[float]]:
         """
@@ -758,9 +762,19 @@ class ParallelMCMCSampling(SamplingStrategy):
         N = len(proposals)
         A = np.zeros((N, N))
 
-        # Sum log probs for each proposal (use all tokens)
-        log_p_list = [sum(p.log_p) for p in proposals]
-        log_target_list = [sum(p.log_target) for p in proposals]
+        # Sum log probs for each proposal, with optional length penalty
+        log_p_list = []
+        log_target_list = []
+        for p in proposals:
+            lp = sum(p.log_p)
+            lt = sum(p.log_target)
+            if self.use_length_penalty and len(p.tokens) > 0:
+                # Normalize by length^penalty (like beam search)
+                length_norm = len(p.tokens) ** self.length_penalty
+                lp = lp / length_norm
+                lt = lt / length_norm
+            log_p_list.append(lp)
+            log_target_list.append(lt)
 
         # Compute transition matrix using MH ratio (matching serial MCMC)
         for i in range(N):
@@ -889,6 +903,7 @@ class ParallelMCMCSampling(SamplingStrategy):
         if self.debug:
             print(f"[ParallelMCMC] Final: {len(tokens_cur)} tokens, acceptance={self._last_acceptance_ratio:.1%}")
 
+        print("AAAAAAAAAAAAA", "".join(tokens_cur))
         return "".join(tokens_cur), total_prompt_tokens, total_completion_tokens
 
     async def _run_with_async_client(self, prompt: str, max_tokens: int) -> Tuple[str, int, int]:
