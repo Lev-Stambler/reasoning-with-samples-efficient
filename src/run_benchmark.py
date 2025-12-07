@@ -15,6 +15,8 @@ Multirun (batch comparisons):
     python run_benchmark.py -m mcmc.alpha=1.0,1.67,4.0
 """
 import os
+import random
+import numpy as np
 import hydra
 from omegaconf import DictConfig, OmegaConf
 from dotenv import load_dotenv
@@ -176,6 +178,13 @@ def main(cfg: DictConfig):
     if cfg.output.verbose:
         print_config(cfg)
 
+    # Set random seed for reproducibility
+    if cfg.benchmark.get("seed") is not None:
+        seed = cfg.benchmark.seed
+        random.seed(seed)
+        np.random.seed(seed)
+        print(f"🎲 Random seed set to: {seed}\n")
+
     # Select model config based on provider
     provider = cfg.model.get("provider", "xai")
     if provider == "ollama":
@@ -219,6 +228,11 @@ def main(cfg: DictConfig):
     benchmark_class = BENCHMARK_REGISTRY[cfg.benchmark.name]
     benchmark = benchmark_class()
 
+    # Build suffix overrides for strategies that have custom suffixes
+    suffix_overrides = {}
+    if cfg.greedy.get("suffix") is not None:
+        suffix_overrides["Greedy"] = cfg.greedy.suffix
+
     # Initialize runner
     runner = BenchmarkRunner(
         benchmark=benchmark,
@@ -227,7 +241,8 @@ def main(cfg: DictConfig):
         base_url=base_url,
         output_dir="predictions",
         prompt_prefix=cfg.prompt.prefix,
-        prompt_suffix=cfg.prompt.suffix
+        prompt_suffix=cfg.prompt.suffix,
+        suffix_overrides=suffix_overrides
     )
 
     # Setup strategies based on config
