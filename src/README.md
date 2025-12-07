@@ -156,9 +156,9 @@ See `benchmark_template.py` for complete examples (SWEBench, MATH).
 
 ### 2. MCMC Sampling
 - Uses Metropolis-Hastings accept/reject with partial regeneration
-- Explores alternative solutions by regenerating suffixes
-- Refines through multiple proposals
-- Configurable via Hydra: `mcmc.steps`, `mcmc.alpha`, `mcmc.restrict_to_last_n`
+- Block-wise generation: generates B tokens per block, refines after each
+- Explores alternative solutions by regenerating suffixes from block boundaries
+- Configurable via Hydra: `mcmc.steps`, `mcmc.alpha`, `mcmc.block_size`, `mcmc.restrict_to_last_n`
 
 ## MCMC Power Sampling: Implementation Notes
 
@@ -183,10 +183,10 @@ For **α=1.67** (default): proposals with higher log probability are more likely
 
 | Feature | Paper | `src/` | Notes |
 |---------|-------|--------|-------|
-| **Partial regeneration** | ✓ | ✓ | Pick random idx, regenerate suffix |
+| **Partial regeneration** | ✓ | ✓ | Pick random block boundary, regenerate suffix |
 | **MH acceptance** | ✓ | ✓ | Accept/reject based on suffix log probs |
-| **Block-wise generation** | B=192 tokens | ❌ | API generates full completions |
-| **Proposal q = p^α** | Temperature-scaled | q = p | API only gives log p, not log q |
+| **Block-wise generation** | B=192 tokens | ✓ | Configurable via `mcmc.block_size` |
+| **Restrict to last N blocks** | - | ✓ | Cost optimization via `mcmc.restrict_to_last_n` |
 
 Partial regeneration works by sending the prefix as an assistant message and letting the model continue.
 
@@ -249,8 +249,11 @@ benchmark.max_tokens: 512        # Max tokens per completion
 # MCMC Sampling
 mcmc.enabled: true               # Enable MCMC strategy
 mcmc.alpha: 1.67                 # Power factor for target distribution
-mcmc.steps: 10                   # MCMC refinement steps
-mcmc.restrict_to_last_n: null    # Only resample last N tokens (null = all)
+mcmc.steps: 10                   # MCMC refinement steps per block
+mcmc.block_size: 192             # Block size B for block-wise generation
+mcmc.restrict_to_last_n: null    # Only resample last N blocks (null = all)
+mcmc.proposal_temperature: 0.59  # Temperature for proposal distribution
+mcmc.debug: false                # Print debug info during MCMC
 
 # Temperature Sampling
 temperature_sampling.enabled: true
