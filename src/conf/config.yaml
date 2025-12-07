@@ -6,9 +6,23 @@ defaults:
   - _self_
 
 # Model configuration
+# Provider: "xai" or "ollama"
 model:
-  name: grok-2
-  base_url: https://api.x.ai/v1
+  provider: ollama  # Change to "ollama" for local open-source models
+
+  # X.AI settings (used when provider: xai)
+  # Requires XAI_API_KEY environment variable
+  xai:
+    name: grok-3-mini
+    base_url: https://api.x.ai/v1
+
+  # Ollama settings (used when provider: ollama)
+  # Install: curl -fsSL https://ollama.com/install.sh | sh
+  # Pull model: ollama pull smollm2:1.7b
+  # Ollama provides proper logprobs at all temperatures (unlike X.AI)
+  ollama:
+    name: smollm2:1.7b
+    base_url: http://localhost:11434/v1
 
 # Benchmark configuration
 benchmark:
@@ -19,8 +33,8 @@ benchmark:
 # Prompt customization
 prompt:
   prefix: ""  # Text to add before the benchmark prompt
-  # suffix: "\n\nThink deeply and show your work, step by step, check your answer and output 'yes' 10 times if you are correct!"  # Text to add after the benchmark prompt
-  suffix: ""
+  suffix: "\n\nThink deeply and show your work, step by step, check your answer and output 'yes' 10 times if you are correct!"  # Text to add after the benchmark prompt
+  # suffix: ""
 
 # MCMC sampling configuration (serial, single proposal per step)
 mcmc:
@@ -53,13 +67,13 @@ mcmc_parallel:
 # Beam search sampling configuration
 beam_search:
   enabled: false
-  alpha: 4.0                     # Power factor for target distribution pi(x) = p(x)^alpha
+  alpha: 2.0                     # Power factor for target distribution pi(x) = p(x)^alpha
   beam_width: 5                  # Number of parallel beams to maintain (top-k after pruning)
   n_per_beam: 5                  # Generate n continuations per beam (enables true beam search)
   tokens_per_step: 256           # Generate this many tokens per expansion
   use_length_penalty: false       # Whether to apply length normalization (set false to disable)
   length_penalty: 0.0            # Length normalization exponent (0.6 = Google NMT, only used if use_length_penalty=true)
-  proposal_temperature: 0.25      # Temperature for proposal distribution
+  proposal_temperature: 0.5      # Temperature for proposal distribution
   top_logprobs: 5                # Number of top log probabilities to retrieve
   debug: false                   # Print debug info during beam search
 

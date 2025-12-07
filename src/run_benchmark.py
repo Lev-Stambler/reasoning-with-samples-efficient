@@ -39,6 +39,8 @@ from mmlu_benchmark import (
     MMLUSocialSciencesBenchmark
 )
 from arcagi2_benchmark import ARCAGI2Benchmark, ARCAGI2TrainingBenchmark
+from math_benchmark import MATHBenchmark
+from gpqa_benchmark import GPQABenchmark
 
 # Load environment variables
 load_dotenv()
@@ -56,6 +58,8 @@ BENCHMARK_REGISTRY = {
     "mmlu-social": MMLUSocialSciencesBenchmark,  # MMLU Social Sciences subjects only
     "arcagi2": ARCAGI2Benchmark,  # ARC-AGI-2 evaluation set (120 tasks)
     "arcagi2-train": ARCAGI2TrainingBenchmark,  # ARC-AGI-2 training set (1,000 tasks)
+    "math": MATHBenchmark,  # MATH500 competition math problems (500 problems)
+    "gpqa": GPQABenchmark,  # GPQA diamond graduate-level questions (~198 problems)
 }
 
 
@@ -172,12 +176,21 @@ def main(cfg: DictConfig):
     if cfg.output.verbose:
         print_config(cfg)
 
-    # Check API key
-    api_key = os.getenv("XAI_API_KEY")
-    if not api_key:
-        print("Error: Please set XAI_API_KEY environment variable")
-        print("   Get your API key from: https://console.x.ai/")
-        return
+    # Select model config based on provider
+    provider = cfg.model.get("provider", "xai")
+    if provider == "ollama":
+        model_name = cfg.model.ollama.name
+        base_url = cfg.model.ollama.base_url
+        api_key = "ollama"  # Ollama doesn't require API key
+        print(f"Using Ollama: {model_name} at {base_url}")
+    else:  # xai (default)
+        model_name = cfg.model.xai.name
+        base_url = cfg.model.xai.base_url
+        api_key = os.getenv("XAI_API_KEY")
+        if not api_key:
+            print("Error: Please set XAI_API_KEY environment variable")
+            print("   Get your API key from: https://console.x.ai/")
+            return
 
     # Initialize benchmark
     if cfg.benchmark.name not in BENCHMARK_REGISTRY:
@@ -191,9 +204,9 @@ def main(cfg: DictConfig):
     # Initialize runner
     runner = BenchmarkRunner(
         benchmark=benchmark,
-        model_name=cfg.model.name,
+        model_name=model_name,
         api_key=api_key,
-        base_url=cfg.model.base_url,
+        base_url=base_url,
         output_dir="predictions",
         prompt_prefix=cfg.prompt.prefix,
         prompt_suffix=cfg.prompt.suffix
@@ -229,8 +242,8 @@ def main(cfg: DictConfig):
             timeout=cfg.mcmc_parallel.timeout,
             max_retries=cfg.mcmc_parallel.max_retries,
             api_key=api_key,
-            base_url=cfg.model.base_url,
-            model=cfg.model.name,
+            base_url=base_url,
+            model=model_name,
         ))
 
     if getattr(cfg.beam_search, 'enabled', False):
