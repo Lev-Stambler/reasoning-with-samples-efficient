@@ -7,7 +7,7 @@ defaults:
 
 # Model configuration
 model:
-  name: grok-2-1212
+  name: grok-4-1-fast-non-reasoning
   base_url: https://api.x.ai/v1
 
 # Benchmark configuration
@@ -20,7 +20,8 @@ benchmark:
 mcmc:
   enabled: true
   alpha: 1.67                    # Power factor for target distribution pi(x) = p(x)^alpha
-  steps: 10                     # Number of MCMC refinement steps
+  steps: 5                     # Number of MCMC refinement steps
+  # steps: 10                     # Number of MCMC refinement steps
   top_logprobs: 5               # Number of top log probabilities to retrieve
   proposal_temperature: 0.59     # Temperature for proposal distribution, should be alpha^(-1)
   restrict_to_last_n: null      # Only resample last N blocks (null = disabled, int = enabled)
