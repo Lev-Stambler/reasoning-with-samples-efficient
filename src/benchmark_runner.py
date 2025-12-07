@@ -310,7 +310,7 @@ class MCMCSampling(SamplingStrategy):
                 if self.restrict_to_last_n is not None:
                     min_block = max(1, num_complete_blocks - self.restrict_to_last_n)
                 else:
-                    min_block = 1
+                    min_block = 0
 
                 # Check if we have a valid range
                 if min_block > num_complete_blocks - 1:
@@ -325,7 +325,7 @@ class MCMCSampling(SamplingStrategy):
                 prefix = "".join(tokens_cur[:idx])
 
                 # Target length for proposal (same as current)
-                target_len = len(tokens_cur) - idx
+                target_len = len(tokens_cur) - idx #+ self.block_size
 
                 # Generate new suffix
                 new_suffix, tokens_prop, log_p_prop, log_target_prop, pt, ct, _ = self._sample_continuation(

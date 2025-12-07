@@ -1,0 +1,25 @@
+model:
+  name: grok-2-1212
+  base_url: https://api.x.ai/v1
+benchmark:
+  name: swebench
+  num_problems: 1
+  max_tokens: 3072
+mcmc:
+  enabled: true
+  alpha: 1.67
+  steps: 10
+  top_logprobs: 5
+  proposal_temperature: 0.59
+  restrict_to_last_n: null
+  block_size: 192
+  debug: true
+temperature_sampling:
+  enabled: false
+  temperature: 0.8
+greedy:
+  enabled: true
+output:
+  verbose: true
+  save_results: false
+  results_dir: ./results
