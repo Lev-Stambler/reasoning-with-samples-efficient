@@ -124,21 +124,20 @@ class SamplingStrategy:
 
 
 class GreedySampling(SamplingStrategy):
-    """Greedy decoding with temperature=0 using completions API."""
+    """Greedy decoding with temperature=0 using chat completions API."""
 
     def __init__(self):
         super().__init__("Greedy")
 
     def generate(self, client: OpenAI, prompt: str, max_tokens: int = 512) -> tuple[str, int, int]:
-        full_prompt = self._apply_chat_template(prompt)
-        response = client.completions.create(
+        response = client.chat.completions.create(
             model=client.default_model,
-            prompt=full_prompt,
+            messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
             max_tokens=max_tokens,
         )
         return (
-            response.choices[0].text,
+            response.choices[0].message.content,
             response.usage.prompt_tokens,
             response.usage.completion_tokens
         )
