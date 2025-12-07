@@ -27,14 +27,13 @@ uv pip install -e ".[dev]"
 # Compare all strategies on HumanEval (first 10 problems)
 python src/run_benchmark.py
 
-# With custom options
+# With custom options (Hydra overrides)
 python src/run_benchmark.py \
-  --benchmark humaneval \
-  --model grok-2-1212 \
-  --num-problems 20 \
-  --strategies greedy,mcmc,temp \
-  --temperature 0.8 \
-  --mcmc-steps 3
+  benchmark.name=humaneval \
+  model.name=grok-2-1212 \
+  benchmark.num_problems=20 \
+  mcmc.alpha=4.0 \
+  mcmc.steps=10
 ```
 
 ### 3. View Results
@@ -83,7 +82,9 @@ HUMANEVAL BENCHMARK RESULTS
 src/
 ├── benchmark_runner.py      # Core framework (Benchmark, Runner, Strategies)
 ├── benchmark_template.py    # Examples for adding new benchmarks
-├── run_benchmark.py         # Main CLI script
+├── run_benchmark.py         # Main CLI script (Hydra-based)
+├── conf/
+│   └── config.yaml          # Hydra configuration defaults
 ├── llm_wrapper.py          # Custom LLM wrapper (optional)
 ├── test_sampling.py        # Simple test script
 └── README.md               # This file
@@ -141,7 +142,7 @@ BENCHMARK_REGISTRY = {
 ### Step 3: Use It
 
 ```bash
-python src/run_benchmark.py --benchmark mybenchmark
+python src/run_benchmark.py benchmark.name=mybenchmark
 ```
 
 See `benchmark_template.py` for complete examples (SWEBench, MATH).
@@ -154,10 +155,10 @@ See `benchmark_template.py` for complete examples (SWEBench, MATH).
 - Fast, consistent, but may miss creative solutions
 
 ### 2. MCMC Sampling
-- Uses Metropolis-Hastings accept/reject
-- Explores alternative solutions
+- Uses Metropolis-Hastings accept/reject with partial regeneration
+- Explores alternative solutions by regenerating suffixes
 - Refines through multiple proposals
-- Configurable: `--mcmc-steps N`, `--temperature T`
+- Configurable via Hydra: `mcmc.steps`, `mcmc.alpha`, `mcmc.restrict_to_last_n`
 
 ## MCMC Power Sampling: Implementation Notes
 
@@ -176,7 +177,7 @@ log A = log(π(x')/π(x)) + log(q(x)/q(x'))
       = (α - 1) · [log p(x') - log p(x)]
 ```
 
-For **α=4** (default): proposals with higher log probability are **3x** more likely to be accepted.
+For **α=1.67** (default): proposals with higher log probability are more likely to be accepted.
 
 ### What's Implemented
 
@@ -192,8 +193,11 @@ Partial regeneration works by sending the prefix as an assistant message and let
 ### Usage
 
 ```bash
-# src/ version (API-based)
-python src/run_benchmark.py --strategies mcmc --mcmc-steps 10
+# src/ version (API-based, Hydra config)
+python src/run_benchmark.py mcmc.enabled=true mcmc.steps=10 mcmc.alpha=4.0
+
+# Only run MCMC (disable other strategies)
+python src/run_benchmark.py greedy.enabled=false temperature_sampling.enabled=false
 
 # Experiment version (local models, full algorithm with B=192)
 cd llm_experiments/
@@ -204,7 +208,7 @@ For research reproducing the paper's results, use the experiment code with local
 
 ### 3. Temperature Sampling
 - Standard stochastic sampling
-- Configurable: `--temperature T`
+- Configurable via Hydra: `temperature_sampling.temperature`
 - Higher T = more diverse outputs
 
 ## Adding New Strategies
@@ -226,16 +230,40 @@ class MyStrategy(SamplingStrategy):
         )
 ```
 
-## CLI Options
+## Configuration (Hydra)
 
+The benchmark uses [Hydra](https://hydra.cc/) for configuration. See `src/conf/config.yaml` for defaults.
+
+### Key Config Options
+
+```yaml
+# Model
+model.name: grok-2-1212          # LLM model name
+model.base_url: https://api.x.ai/v1
+
+# Benchmark
+benchmark.name: humaneval        # Benchmark to use
+benchmark.num_problems: 10       # Number of problems to test
+benchmark.max_tokens: 512        # Max tokens per completion
+
+# MCMC Sampling
+mcmc.enabled: true               # Enable MCMC strategy
+mcmc.alpha: 1.67                 # Power factor for target distribution
+mcmc.steps: 10                   # MCMC refinement steps
+mcmc.restrict_to_last_n: null    # Only resample last N tokens (null = all)
+
+# Temperature Sampling
+temperature_sampling.enabled: true
+temperature_sampling.temperature: 0.8
+
+# Greedy Sampling
+greedy.enabled: true
 ```
---benchmark         Benchmark to use (humaneval, etc.)
---model            LLM model name (default: grok-2-1212)
---num-problems     Number of problems to test (default: 10)
---max-tokens       Max tokens per completion (default: 512)
---strategies       Comma-separated strategies (default: greedy,mcmc,temp)
---mcmc-steps       MCMC refinement steps (default: 3)
---temperature      Sampling temperature (default: 0.8)
+
+### Override via CLI
+
+```bash
+python src/run_benchmark.py mcmc.alpha=4.0 benchmark.num_problems=20
 ```
 
 ## Metrics Tracked
@@ -249,20 +277,21 @@ class MyStrategy(SamplingStrategy):
 
 ### Compare strategies on first 5 problems
 ```bash
-python src/run_benchmark.py --num-problems 5
+python src/run_benchmark.py benchmark.num_problems=5
 ```
 
-### Test only MCMC with high temperature
+### Test only MCMC with higher alpha
 ```bash
 python src/run_benchmark.py \
-  --strategies mcmc \
-  --temperature 1.0 \
-  --mcmc-steps 5
+  greedy.enabled=false \
+  temperature_sampling.enabled=false \
+  mcmc.alpha=4.0 \
+  mcmc.steps=5
 ```
 
 ### Use different model
 ```bash
-python src/run_benchmark.py --model grok-beta
+python src/run_benchmark.py model.name=grok-beta
 ```
 
 ## Extending the Framework
@@ -272,7 +301,7 @@ The framework is designed to be easily extensible:
 1. **New Benchmarks**: See `benchmark_template.py` for SWEBench/MATH examples
 2. **New Strategies**: Inherit from `SamplingStrategy`
 3. **New Metrics**: Extend `BenchmarkMetrics` dataclass
-4. **New Models**: Just change `--model` parameter (works with any OpenAI-compatible API)
+4. **New Models**: Just change `model.name` config (works with any OpenAI-compatible API)
 
 ## Troubleshooting
 
