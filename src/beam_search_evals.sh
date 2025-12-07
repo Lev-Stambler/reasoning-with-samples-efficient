@@ -90,6 +90,7 @@ parallel -j 4 --colsep ' ' \
 	'uv run --python 3.12 python run_benchmark.py \
 		benchmark.name=gsm8k \
 		benchmark.num_problems=30 \
+		benchmark.max_tokens=2048
 		beam_search.enabled=true \
 		beam_search.{1} \
 		beam_search.{2} \

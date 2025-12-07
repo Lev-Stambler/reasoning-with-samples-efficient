@@ -374,6 +374,32 @@ class MCMCSampling(SamplingStrategy):
         return getattr(self, '_last_acceptance_ratio', 0.0)
 
 
+@dataclass
+class Beam:
+    """Represents a single beam hypothesis in beam search."""
+    text: str
+    tokens: list[str]
+    log_p: list[float]
+    log_target: list[float]
+    finished: bool
+    score: float = 0.0
+
+    @staticmethod
+    def empty() -> 'Beam':
+        """Create an empty initial beam."""
+        return Beam(text="", tokens=[], log_p=[], log_target=[], finished=False)
+
+    def extend(self, text: str, tokens: list[str], log_p: list[float], log_target: list[float], finished: bool) -> 'Beam':
+        """Create a new beam by extending this one with additional content."""
+        return Beam(
+            text=self.text + text,
+            tokens=self.tokens + tokens,
+            log_p=self.log_p + log_p,
+            log_target=self.log_target + log_target,
+            finished=finished,
+        )
+
+
 class BeamSearchSampling(SamplingStrategy):
     """
     Beam search with power sampling via API.
@@ -467,7 +493,25 @@ class BeamSearchSampling(SamplingStrategy):
             finished_naturally
         )
     
-    def _sample_continuation_multiple(self, client: OpenAI, prompt: str, prefix: str, max_tokens: int, n: int):
+    def _extract_beams_from_response(self, response) -> list[Beam]:
+        """Extract Beam objects from an API response with multiple choices."""
+        beams = []
+        for choice in response.choices:
+            text = choice.message.content
+
+            if choice.logprobs and choice.logprobs.content:
+                tokens = [t.token for t in choice.logprobs.content]
+                log_p = [t.logprob for t in choice.logprobs.content]
+                log_target = [self.alpha * lp for lp in log_p]
+            else:
+                tokens, log_p, log_target = [], [], []
+
+            finished = choice.finish_reason == "stop"
+            beams.append(Beam(text=text, tokens=tokens, log_p=log_p, log_target=log_target, finished=finished))
+
+        return beams
+
+    def _sample_continuation_multiple(self, client: OpenAI, prompt: str, prefix: str, max_tokens: int, n: int) -> tuple[list[Beam], int, int]:
         """Generate n continuations from a prefix for true beam search expansion."""
         response = client.chat.completions.create(
             model=client.default_model,
@@ -479,32 +523,13 @@ class BeamSearchSampling(SamplingStrategy):
             max_tokens=max_tokens,
             logprobs=True,
             top_logprobs=self.top_logprobs,
-            n=n,  # Generate n different samples
+            n=n,
         )
-        
-        # Extract all n continuations
-        results = []
-        for choice in response.choices:
-            continuation = choice.message.content
-            
-            # Extract logprobs for this choice
-            if choice.logprobs and choice.logprobs.content:
-                tokens = [t.token for t in choice.logprobs.content]
-                log_p = [t.logprob for t in choice.logprobs.content]
-                log_target = [self.alpha * lp for lp in log_p]
-            else:
-                tokens = []
-                log_p = []
-                log_target = []
-            
-            finished_naturally = choice.finish_reason == "stop"
-            
-            results.append((continuation, tokens, log_p, log_target, finished_naturally))
-        
-        # Token usage is for ALL n samples combined
-        return results, response.usage.prompt_tokens, response.usage.completion_tokens
-    
-    async def _sample_continuation_multiple_async(self, client: AsyncOpenAI, prompt: str, prefix: str, max_tokens: int, n: int):
+
+        beams = self._extract_beams_from_response(response)
+        return beams, response.usage.prompt_tokens, response.usage.completion_tokens
+
+    async def _sample_continuation_multiple_async(self, client: AsyncOpenAI, prompt: str, prefix: str, max_tokens: int, n: int) -> tuple[list[Beam], int, int]:
         """Async version: Generate n continuations from a prefix for true beam search expansion."""
         response = await client.chat.completions.create(
             model=client.default_model,
@@ -516,189 +541,151 @@ class BeamSearchSampling(SamplingStrategy):
             max_tokens=max_tokens,
             logprobs=True,
             top_logprobs=self.top_logprobs,
-            n=n,  # Generate n different samples
+            n=n,
         )
-        
-        # Extract all n continuations (same logic as sync version)
-        results = []
-        for choice in response.choices:
-            continuation = choice.message.content
-            
-            # Extract logprobs for this choice
-            if choice.logprobs and choice.logprobs.content:
-                tokens = [t.token for t in choice.logprobs.content]
-                log_p = [t.logprob for t in choice.logprobs.content]
-                log_target = [self.alpha * lp for lp in log_p]
-            else:
-                tokens = []
-                log_p = []
-                log_target = []
-            
-            finished_naturally = choice.finish_reason == "stop"
-            
-            results.append((continuation, tokens, log_p, log_target, finished_naturally))
-        
-        # Token usage is for ALL n samples combined
-        return results, response.usage.prompt_tokens, response.usage.completion_tokens
+
+        beams = self._extract_beams_from_response(response)
+        return beams, response.usage.prompt_tokens, response.usage.completion_tokens
     
-    async def _expand_beams_parallel(self, client: AsyncOpenAI, active_beams, prompt, block_num):
+    async def _expand_beams_parallel(self, client: AsyncOpenAI, active_beams: list[Beam], prompt: str, block_num: int) -> tuple[list[Beam], int, int]:
         """Parallelize beam expansion using async/await."""
+        # Create async tasks for each beam
         tasks = []
-        
-        for beam_text, beam_tokens, beam_log_p, beam_log_target, _ in active_beams:
-            if block_num == 0 and not beam_text:
-                # First expansion: generate from scratch with n samples
-                task = self._sample_continuation_multiple_async(
-                    client, prompt, "", self.tokens_per_step, n=self.n_per_beam
-                )
-            else:
-                # Subsequent expansions: generate n continuations from this beam
-                task = self._sample_continuation_multiple_async(
-                    client, prompt, beam_text, self.tokens_per_step, n=self.n_per_beam
-                )
-            tasks.append((task, (beam_text, beam_tokens, beam_log_p, beam_log_target)))
-        
-        # Run all API calls in parallel!
+        for beam in active_beams:
+            prefix = "" if (block_num == 0 and not beam.text) else beam.text
+            task = self._sample_continuation_multiple_async(
+                client, prompt, prefix, self.tokens_per_step, n=self.n_per_beam
+            )
+            tasks.append((task, beam))
+
+        # Run all API calls in parallel
         results = await asyncio.gather(*[task for task, _ in tasks])
-        
+
         # Process results and create candidate beams
         candidate_beams = []
-        total_pt = 0
-        total_ct = 0
-        
-        for i, (continuations, pt, ct) in enumerate(results):
-            total_pt += pt
-            total_ct += ct
-            beam_text, beam_tokens, beam_log_p, beam_log_target = tasks[i][1]
-            
-            for text, tokens, log_p, log_target, finished in continuations:
+        total_prompt_tokens = 0
+        total_completion_tokens = 0
+
+        for i, (continuations, prompt_tokens, completion_tokens) in enumerate(results):
+            total_prompt_tokens += prompt_tokens
+            total_completion_tokens += completion_tokens
+            parent_beam = tasks[i][1]
+
+            for continuation in continuations:
                 if block_num == 0:
-                    # First block
-                    candidate_beams.append((text, tokens, log_p, log_target, finished))
+                    candidate_beams.append(continuation)
                 else:
-                    # Subsequent blocks - concatenate with beam prefix
-                    new_text = beam_text + text
-                    new_tokens = beam_tokens + tokens
-                    new_log_p = beam_log_p + log_p
-                    new_log_target = beam_log_target + log_target
-                    candidate_beams.append((new_text, new_tokens, new_log_p, new_log_target, finished))
-        
-        return candidate_beams, total_pt, total_ct
+                    # Extend parent beam with continuation
+                    extended = parent_beam.extend(
+                        text=continuation.text,
+                        tokens=continuation.tokens,
+                        log_p=continuation.log_p,
+                        log_target=continuation.log_target,
+                        finished=continuation.finished,
+                    )
+                    candidate_beams.append(extended)
+
+        return candidate_beams, total_prompt_tokens, total_completion_tokens
     
-    def _calculate_beam_score(self, log_target: list[float], length: int) -> float:
-        """Calculate beam score, optionally with length normalization."""
+    def _score_beam(self, beam: Beam) -> Beam:
+        """Calculate and set the score for a beam."""
+        length = len(beam.tokens)
         if length == 0:
-            return float('-inf')  # Empty beams should never be selected
-        cumulative_score = sum(log_target)
-        if self.use_length_penalty:
-            normalized_score = cumulative_score / (length ** self.length_penalty)
-            return normalized_score
+            beam.score = float('-inf')
         else:
-            return cumulative_score
-    
+            cumulative_score = sum(beam.log_target)
+            if self.use_length_penalty:
+                beam.score = cumulative_score / (length ** self.length_penalty)
+            else:
+                beam.score = cumulative_score
+        return beam
+
     async def _generate_async(self, client: AsyncOpenAI, prompt: str, max_tokens: int = 512) -> tuple[str, int, int]:
         """
         Async version of generate() with parallel beam expansion.
-        
+
         Algorithm:
         1. Start with empty beam
         2. For each beam, generate n_per_beam continuations IN PARALLEL (beam branching)
         3. Score all beam_width × n_per_beam candidates using p^α
         4. Keep top beam_width beams by score
         5. Repeat until max_tokens or all beams finish
-        
-        With beam_width=2, n_per_beam=2: generates 4 candidates per iteration in parallel.
         """
         total_prompt_tokens = 0
         total_completion_tokens = 0
-        
-        # Initialize beams: (text, tokens, log_p, log_target, finished)
-        active_beams = [("", [], [], [], False)]
-        completed_beams = []
-        
+
+        active_beams: list[Beam] = [Beam.empty()]
+        completed_beams: list[Beam] = []
+
         num_expansions = 0
-        num_blocks = max_tokens // self.tokens_per_step
-        if num_blocks < 1:
-            num_blocks = 1
-        
+        num_blocks = max(1, max_tokens // self.tokens_per_step)
+
         if self.debug:
-            print(f"[BeamSearch] TRUE beam search (ASYNC): beam_width={self.beam_width}, n_per_beam={self.n_per_beam}")
+            print(f"[BeamSearch] beam_width={self.beam_width}, n_per_beam={self.n_per_beam}")
             print(f"[BeamSearch] Generating {num_blocks} blocks of {self.tokens_per_step} tokens")
-            print(f"[BeamSearch] α={self.alpha}, length_penalty={self.length_penalty}")
-            print(f"[BeamSearch] Each iteration: {len(active_beams)} beams × {self.n_per_beam} samples = candidates (PARALLEL)")
-        
+            print(f"[BeamSearch] α={self.alpha}, length_penalty={self.length_penalty}, use_length_penalty={self.use_length_penalty}")
+
         for block_num in range(num_blocks):
             if not active_beams:
                 break
-            
-            # PARALLEL EXPANSION PHASE: Generate n_per_beam continuations for ALL beams at once
-            candidate_beams, pt, ct = await self._expand_beams_parallel(
+
+            # Expand all beams in parallel
+            candidate_beams, prompt_tokens, completion_tokens = await self._expand_beams_parallel(
                 client, active_beams, prompt, block_num
             )
-            total_prompt_tokens += pt
-            total_completion_tokens += ct
-            
+            total_prompt_tokens += prompt_tokens
+            total_completion_tokens += completion_tokens
             num_expansions += 1
-            
+
             if self.debug:
-                print(f"[BeamSearch] Block {block_num+1}: Generated {len(candidate_beams)} candidates (parallel)")
-            
+                print(f"[BeamSearch] Block {block_num+1}: Generated {len(candidate_beams)} candidates")
+
             # Score all candidates
-            scored_beams = []
             for beam in candidate_beams:
-                text, tokens, log_p, log_target, finished = beam
-                score = self._calculate_beam_score(log_target, len(tokens))
-                scored_beams.append((score, text, tokens, log_p, log_target, finished))
-            
+                self._score_beam(beam)
+
             # Sort by score (descending)
-            scored_beams.sort(key=lambda x: x[0], reverse=True)
-            
-            # Separate completed and active
-            new_completed = [b for b in scored_beams if b[5]]
-            new_active = [b for b in scored_beams if not b[5]]
-            
-            # Keep top beams
-            completed_beams.extend(new_completed[:self.beam_width])
-            active_beams = [(b[1], b[2], b[3], b[4], b[5]) for b in new_active[:self.beam_width]]
-            
+            candidate_beams.sort(key=lambda b: b.score, reverse=True)
+
+            # Separate completed and active, keep top beam_width of each
+            new_completed = [b for b in candidate_beams if b.finished][:self.beam_width]
+            new_active = [b for b in candidate_beams if not b.finished][:self.beam_width]
+
+            completed_beams.extend(new_completed)
+            active_beams = new_active
+
             if self.debug:
-                print(f"[BeamSearch] Block {block_num+1}/{num_blocks}: "
-                      f"{len(active_beams)} active, {len(completed_beams)} completed")
-                if scored_beams:
-                    best_score = scored_beams[0][0]
-                    print(f"[BeamSearch]   Best score: {best_score:.4f}")
-            
+                print(f"[BeamSearch] Block {block_num+1}/{num_blocks}: {len(active_beams)} active, {len(completed_beams)} completed")
+                if candidate_beams:
+                    print(f"[BeamSearch]   Best score: {candidate_beams[0].score:.4f}")
+
             # Stop if we have enough completed beams
             if len(completed_beams) >= self.beam_width:
                 if self.debug:
                     print(f"[BeamSearch] Stopping: {len(completed_beams)} beams completed")
                 break
-        
+
         # Select best beam from all (completed + active)
-        all_beams = completed_beams + [
-            (self._calculate_beam_score(beam[3], len(beam[1])),) + beam
-            for beam in active_beams
-        ]
-        
+        all_beams = completed_beams + [self._score_beam(b) for b in active_beams]
+
         if not all_beams:
-            # Fallback: return empty
             return "", total_prompt_tokens, total_completion_tokens
-        
+
         # Sort by score and take best
-        all_beams.sort(key=lambda x: x[0], reverse=True)
+        all_beams.sort(key=lambda b: b.score, reverse=True)
         best_beam = all_beams[0]
-        best_text = best_beam[1]
-        
+
         # Store metadata for diagnostics
         self._last_num_expansions = num_expansions
-        self._last_best_score = best_beam[0]
+        self._last_best_score = best_beam.score
         self._last_num_completed = len(completed_beams)
-        
+
         if self.debug:
-            print(f"[BeamSearch] Final: {len(best_beam[2])} tokens, score={best_beam[0]:.4f}")
-            print(f"[BeamSearch] Text: {best_text[:200]}..." if len(best_text) > 200 else f"[BeamSearch] Text: {best_text}")
-        
-        return best_text, total_prompt_tokens, total_completion_tokens
+            print(f"[BeamSearch] Final: {len(best_beam.tokens)} tokens, score={best_beam.score:.4f}")
+            preview = best_beam.text[:200] + "..." if len(best_beam.text) > 200 else best_beam.text
+            print(f"[BeamSearch] Text: {preview}")
+
+        return best_beam.text, total_prompt_tokens, total_completion_tokens
     
     async def _run_with_client(self, api_key: str, base_url: str, model: str, prompt: str, max_tokens: int):
         """Helper to run async generation with proper client lifecycle."""
