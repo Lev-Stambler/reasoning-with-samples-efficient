@@ -14,7 +14,7 @@ model:
 benchmark:
   name: humaneval  # Options: humaneval, swebench, swebench-verified, gsm8k, mmlu
   num_problems: 10
-  max_tokens: 1_024  # Max tokens for final completion (applied everywhere)
+  max_tokens: 4_096  # Max tokens for final completion (applied everywhere)
 
 # Prompt customization
 prompt:
