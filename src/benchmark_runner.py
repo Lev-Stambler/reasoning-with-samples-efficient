@@ -596,46 +596,44 @@ class ParallelMCMCSampling(SamplingStrategy):
     def _compute_transition_matrix(self, proposals: List[Proposal]) -> np.ndarray:
         """
         Computes Calderhead matrix with CORRECT Hastings adjustment.
-        
+
         R(i,j) = π(j)/π(i) * q(i|j)/q(j|i)
-        
+
         Here, q(x) = P_model(x).
         π(x) = P_model(x)^α
-        
+
         Therefore:
         R(i,j) = (P_j^α / P_i^α) * (P_i / P_j)
                = P_j^(α-1) / P_i^(α-1)
-               
+
         Log R(i,j) = (α - 1) * (sum(log_p_j) - sum(log_p_i))
+
+        For variable-length proposals, we compare up to min(len_i, len_j) for each pair,
+        matching the serial MCMC's approach.
         """
         N = len(proposals)
         A = np.zeros((N, N))
 
-        # We must align lengths to compare them fairly.
-        # Instead of truncating current state, we truncate comparisons to the
-        # intersection of lengths. This is still an approximation but better than 
-        # destroying the state.
-        min_len = min(len(p.tokens) for p in proposals)
-        
-        # Calculate sum of log_probs up to min_len
-        # Using (alpha - 1) per the Hastings correction
-        scores = []
-        for p in proposals:
-            # We use the raw model log_p here, not log_target
-            score = sum(p.log_p[:min_len]) * (self.alpha - 1)
-            scores.append(score)
-            
-        scores = np.array(scores)
-
+        # Compute pairwise transition probabilities
+        # For each pair (i,j), compare up to min(len_i, len_j)
         for i in range(N):
             for j in range(N):
                 if i != j:
-                    log_R = scores[j] - scores[i]
+                    # Compare up to the minimum length of the two proposals
+                    compare_len = min(len(proposals[i].tokens), len(proposals[j].tokens))
+
+                    # Compute log probability sums up to compare_len
+                    log_p_i = sum(proposals[i].log_p[:compare_len])
+                    log_p_j = sum(proposals[j].log_p[:compare_len])
+
+                    # Hastings correction: (α - 1) factor
+                    log_R = (self.alpha - 1) * (log_p_j - log_p_i)
+
                     # Calderhead Eq: A(i,j) = 1/N * min(1, R)
-                    # We clamp log_R to avoid overflow in exp
-                    log_R = np.clip(log_R, -50, 50)
+                    log_R = np.clip(log_R, -50, 50)  # Avoid overflow
                     A[i, j] = (1.0 / N) * min(1.0, np.exp(log_R))
 
+            # Diagonal: probability of staying in current state
             A[i, i] = 1.0 - np.sum(A[i, :])
 
         return np.maximum(A, 0.0)
@@ -645,6 +643,8 @@ class ParallelMCMCSampling(SamplingStrategy):
         log_p_cur: List[float] = []
         total_prompt_tokens = 0
         total_completion_tokens = 0
+        attempts = 0
+        acceptances = 0
 
         # Initial Generation (Bootstrap)
         messages = [{"role": "user", "content": prompt}]
@@ -660,13 +660,22 @@ class ParallelMCMCSampling(SamplingStrategy):
 
             # 1. Select a block to refine (Pivot)
             # We keep prefix, resample suffix
-            pivot_idx = random.randint(0, len(tokens_cur) - 1)
+            # Use block-aligned index selection (matching serial MCMC)
+            num_complete_blocks = len(tokens_cur) // self.block_size
+            if num_complete_blocks < 1:
+                if self.debug:
+                    print(f"Step {step}: Skipping, not enough tokens for a complete block")
+                break
+
+            block_idx = random.randint(0, num_complete_blocks - 1)
+            pivot_idx = block_idx * self.block_size
+
             prefix = "".join(tokens_cur[:pivot_idx])
             suffix_tokens = tokens_cur[pivot_idx:]
             suffix_log_p = log_p_cur[pivot_idx:]
 
             # The length we want to generate to match current state
-            target_gen_len = len(suffix_tokens) # + some exploration buffer if desired
+            target_gen_len = len(suffix_tokens) + self.block_size # + some exploration buffer if desired
 
             current_proposal = Proposal(
                 tokens=suffix_tokens,
@@ -686,15 +695,27 @@ class ParallelMCMCSampling(SamplingStrategy):
 
             # 3. Transition
             A = self._compute_transition_matrix(proposals)
+            attempts += 1
             next_idx = np.random.choice(len(proposals), p=A[0]) # 0 is current
 
+            if self.debug:
+                log_targets = [sum(p.log_target) for p in proposals]
+                status = f"ACCEPT(proposal {next_idx})" if next_idx != 0 else "STAY"
+                print(f"[ParallelMCMC] Step {step+1}: block_idx={block_idx}, pivot_idx={pivot_idx}, "
+                      f"log_targets={[f'{lt:.1f}' for lt in log_targets]}, {status}")
+
             if next_idx != 0:
+                acceptances += 1
                 selected = proposals[next_idx]
                 # Update State
                 tokens_cur = tokens_cur[:pivot_idx] + selected.tokens
                 log_p_cur = log_p_cur[:pivot_idx] + selected.log_p
-                if self.debug:
-                    print(f"Step {step}: Swapped suffix at {pivot_idx}")
+
+        # Store acceptance ratio
+        self._last_acceptance_ratio = acceptances / attempts if attempts > 0 else 0.0
+
+        if self.debug:
+            print(f"[ParallelMCMC] Final: {len(tokens_cur)} tokens, acceptance={self._last_acceptance_ratio:.1%}")
 
         return "".join(tokens_cur), total_prompt_tokens, total_completion_tokens
 
@@ -711,6 +732,10 @@ class ParallelMCMCSampling(SamplingStrategy):
         if self.base_url == "https://api.openai.com/v1":
             self.base_url = str(client.base_url)
         return asyncio.run(self._run_with_async_client(prompt, max_tokens))
+
+    def get_acceptance_ratio(self) -> float:
+        """Return the acceptance ratio from the last generate() call."""
+        return getattr(self, '_last_acceptance_ratio', 0.0)
 
 class __ParallelMCMCSampling(SamplingStrategy):
     """
