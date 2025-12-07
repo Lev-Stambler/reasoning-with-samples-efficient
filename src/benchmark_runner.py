@@ -649,7 +649,10 @@ class BenchmarkRunner:
                     prediction = self.benchmark.format_prediction(problem, result.completion)
                     predictions_by_strategy[strategy.name].append(prediction)
                     
-                    print(f"✓ Generated ({result.time_seconds:.2f}s, {result.total_tokens} tokens, ${result.cost_usd:.4f})")
+                    status = "✓ PASS" if result.passed else "✗ FAIL"
+                    print(f"{status} ({result.time_seconds:.2f}s, {result.total_tokens} tokens, ${result.cost_usd:.4f})")
+                    if not result.passed and result.metadata:
+                        print(f"    {result.metadata.get('result_message', '')}")
                 except Exception as e:
                     print(f"✗ ERROR: {str(e)[:50]}")
         
@@ -658,7 +661,7 @@ class BenchmarkRunner:
             if predictions:
                 self.save_predictions(predictions, strategy_name, run_id)
         
-        # Aggregate metrics (without pass rates - those come from official evaluation)
+        # Aggregate metrics
         metrics = {}
         for strategy_name, results in results_by_strategy.items():
             if not results:
@@ -666,11 +669,15 @@ class BenchmarkRunner:
             
             total_cost = sum(r.cost_usd for r in results)
             
+            # Calculate pass rate from results
+            num_passed = sum(1 for r in results if r.passed)
+            pass_rate = (num_passed / len(results)) * 100.0 if results else 0.0
+            
             metrics[strategy_name] = BenchmarkMetrics(
                 model_name=self.model_name,
                 strategy_name=strategy_name,
                 benchmark_name=self.benchmark.name(),
-                pass_rate=0.0,  # Will be filled by official evaluation
+                pass_rate=pass_rate,
                 avg_time=sum(r.time_seconds for r in results) / len(results),
                 total_tokens=sum(r.total_tokens for r in results),
                 avg_tokens_per_problem=sum(r.total_tokens for r in results) / len(results),

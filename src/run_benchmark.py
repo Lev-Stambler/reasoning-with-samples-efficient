@@ -29,6 +29,13 @@ from benchmark_runner import (
     BenchmarkMetrics
 )
 from swebench_benchmark import SWEBenchLiteBenchmark, SWEBenchVerifiedBenchmark
+from gsm8k_benchmark import GSM8KBenchmark, GSM8KTrainBenchmark
+from mmlu_benchmark import (
+    MMLUBenchmark,
+    MMLUSTEMBenchmark,
+    MMLUHumanitiesBenchmark,
+    MMLUSocialSciencesBenchmark
+)
 
 # Load environment variables
 load_dotenv()
@@ -38,8 +45,12 @@ BENCHMARK_REGISTRY = {
     "humaneval": HumanEvalBenchmark,
     "swebench": SWEBenchLiteBenchmark,  # SWE-bench Lite (300 problems)
     "swebench-verified": SWEBenchVerifiedBenchmark,  # SWE-bench Verified (500 problems)
-    # Add more benchmarks here:
-    # "mbpp": MBPPBenchmark,
+    "gsm8k": GSM8KBenchmark,  # GSM8K test set (1,319 problems)
+    "gsm8k-train": GSM8KTrainBenchmark,  # GSM8K training set (7,473 problems)
+    "mmlu": MMLUBenchmark,  # MMLU all subjects (~14,000 problems)
+    "mmlu-stem": MMLUSTEMBenchmark,  # MMLU STEM subjects only
+    "mmlu-humanities": MMLUHumanitiesBenchmark,  # MMLU Humanities subjects only
+    "mmlu-social": MMLUSocialSciencesBenchmark,  # MMLU Social Sciences subjects only
 }
 
 
