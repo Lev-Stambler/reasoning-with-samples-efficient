@@ -318,6 +318,229 @@ class MCMCSampling(SamplingStrategy):
         return getattr(self, '_last_acceptance_ratio', 0.0)
 
 
+class BeamSearchSampling(SamplingStrategy):
+    """
+    Beam search with power sampling via API.
+    
+    Maintains beam_width parallel hypotheses, scores using p^α logprobs,
+    and uses length normalization to prevent short-sequence bias.
+    
+    Unlike MCMC which uses accept/reject, beam search deterministically
+    keeps the top-k hypotheses at each step.
+    """
+    
+    def __init__(
+        self,
+        alpha: float = 4.0,
+        beam_width: int = 5,
+        tokens_per_step: int = 192,  # Generate this many tokens per expansion
+        length_penalty: float = 0.6,
+        proposal_temperature: float = 1.0,
+        top_logprobs: int = 5,
+        debug: bool = False,
+    ):
+        name = f"BeamSearch(α={alpha},width={beam_width},tps={tokens_per_step})"
+        super().__init__(name)
+        self.alpha = alpha
+        self.beam_width = beam_width
+        self.tokens_per_step = tokens_per_step
+        self.length_penalty = length_penalty
+        self.proposal_temperature = proposal_temperature
+        self.top_logprobs = top_logprobs
+        self.debug = debug
+    
+    def _extract_logprobs_with_tokens(self, response) -> tuple[list[str], list[float], list[float]]:
+        """Extract tokens and logprobs from API response."""
+        if not response.choices[0].logprobs or not response.choices[0].logprobs.content:
+            return [], [], []
+        
+        tokens = [token.token for token in response.choices[0].logprobs.content]
+        log_p = [token.logprob for token in response.choices[0].logprobs.content]
+        log_target = [self.alpha * lp for lp in log_p]
+        
+        return tokens, log_p, log_target
+    
+    def _sample_full(self, client: OpenAI, prompt: str, max_tokens: int):
+        """Generate a full sample from base model."""
+        response = client.chat.completions.create(
+            model=client.default_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=self.proposal_temperature,
+            max_tokens=max_tokens,
+            logprobs=True,
+            top_logprobs=self.top_logprobs,
+        )
+        
+        text = response.choices[0].message.content
+        tokens, log_p, log_target = self._extract_logprobs_with_tokens(response)
+        finished_naturally = response.choices[0].finish_reason == "stop"
+        
+        return (
+            text, tokens, log_p, log_target,
+            response.usage.prompt_tokens,
+            response.usage.completion_tokens,
+            finished_naturally
+        )
+    
+    def _sample_continuation(self, client: OpenAI, prompt: str, prefix: str, max_tokens: int):
+        """Generate a continuation from a prefix."""
+        response = client.chat.completions.create(
+            model=client.default_model,
+            messages=[
+                {"role": "user", "content": prompt},
+                {"role": "assistant", "content": prefix}
+            ],
+            temperature=self.proposal_temperature,
+            max_tokens=max_tokens,
+            logprobs=True,
+            top_logprobs=self.top_logprobs,
+        )
+        
+        continuation = response.choices[0].message.content
+        tokens, log_p, log_target = self._extract_logprobs_with_tokens(response)
+        finished_naturally = response.choices[0].finish_reason == "stop"
+        
+        return (
+            continuation, tokens, log_p, log_target,
+            response.usage.prompt_tokens,
+            response.usage.completion_tokens,
+            finished_naturally
+        )
+    
+    def _calculate_beam_score(self, log_target: list[float], length: int) -> float:
+        """Calculate length-normalized beam score."""
+        if length == 0:
+            return 0.0
+        cumulative_score = sum(log_target)
+        normalized_score = cumulative_score / (length ** self.length_penalty)
+        return normalized_score
+    
+    def generate(self, client: OpenAI, prompt: str, max_tokens: int = 512) -> tuple[str, int, int]:
+        """
+        Generate completion using beam search with power sampling.
+        
+        Algorithm:
+        1. Start with empty beam
+        2. Generate tokens_per_step tokens for each beam
+        3. Score all beams using p^α with length normalization
+        4. Keep top beam_width beams
+        5. Repeat until max_tokens or all beams finish
+        """
+        total_prompt_tokens = 0
+        total_completion_tokens = 0
+        
+        # Initialize beams: (text, tokens, log_p, log_target, finished)
+        active_beams = [("", [], [], [], False)]
+        completed_beams = []
+        
+        num_expansions = 0
+        num_blocks = max_tokens // self.tokens_per_step
+        if num_blocks < 1:
+            num_blocks = 1
+        
+        if self.debug:
+            print(f"[BeamSearch] Generating {num_blocks} blocks of {self.tokens_per_step} tokens")
+            print(f"[BeamSearch] beam_width={self.beam_width}, α={self.alpha}, length_penalty={self.length_penalty}")
+        
+        for block_num in range(num_blocks):
+            if not active_beams:
+                break
+            
+            candidate_beams = []
+            
+            # Expand each active beam
+            for beam_text, beam_tokens, beam_log_p, beam_log_target, _ in active_beams:
+                # Generate next chunk
+                if block_num == 0 and not beam_text:
+                    # First expansion: generate from scratch
+                    text, tokens, log_p, log_target, pt, ct, finished = self._sample_full(
+                        client, prompt, self.tokens_per_step
+                    )
+                else:
+                    # Continue from prefix
+                    text, tokens, log_p, log_target, pt, ct, finished = self._sample_continuation(
+                        client, prompt, beam_text, self.tokens_per_step
+                    )
+                
+                total_prompt_tokens += pt
+                total_completion_tokens += ct
+                
+                # Create new beam with extended sequence
+                new_text = beam_text + text
+                new_tokens = beam_tokens + tokens
+                new_log_p = beam_log_p + log_p
+                new_log_target = beam_log_target + log_target
+                
+                candidate_beams.append((new_text, new_tokens, new_log_p, new_log_target, finished))
+            
+            num_expansions += 1
+            
+            # Score all candidates
+            scored_beams = []
+            for beam in candidate_beams:
+                text, tokens, log_p, log_target, finished = beam
+                score = self._calculate_beam_score(log_target, len(tokens))
+                scored_beams.append((score, text, tokens, log_p, log_target, finished))
+            
+            # Sort by score (descending)
+            scored_beams.sort(key=lambda x: x[0], reverse=True)
+            
+            # Separate completed and active
+            new_completed = [b for b in scored_beams if b[5]]
+            new_active = [b for b in scored_beams if not b[5]]
+            
+            # Keep top beams
+            completed_beams.extend(new_completed[:self.beam_width])
+            active_beams = [(b[1], b[2], b[3], b[4], b[5]) for b in new_active[:self.beam_width]]
+            
+            if self.debug:
+                print(f"[BeamSearch] Block {block_num+1}/{num_blocks}: "
+                      f"{len(active_beams)} active, {len(completed_beams)} completed")
+                if scored_beams:
+                    best_score = scored_beams[0][0]
+                    print(f"[BeamSearch]   Best score: {best_score:.4f}")
+            
+            # Stop if we have enough completed beams
+            if len(completed_beams) >= self.beam_width:
+                if self.debug:
+                    print(f"[BeamSearch] Stopping: {len(completed_beams)} beams completed")
+                break
+        
+        # Select best beam from all (completed + active)
+        all_beams = completed_beams + [
+            (self._calculate_beam_score(beam[3], len(beam[1])),) + beam
+            for beam in active_beams
+        ]
+        
+        if not all_beams:
+            # Fallback: return empty
+            return "", total_prompt_tokens, total_completion_tokens
+        
+        # Sort by score and take best
+        all_beams.sort(key=lambda x: x[0], reverse=True)
+        best_beam = all_beams[0]
+        best_text = best_beam[1]
+        
+        # Store metadata for diagnostics
+        self._last_num_expansions = num_expansions
+        self._last_best_score = best_beam[0]
+        self._last_num_completed = len(completed_beams)
+        
+        if self.debug:
+            print(f"[BeamSearch] Final: {len(best_beam[2])} tokens, score={best_beam[0]:.4f}")
+            print(f"[BeamSearch] Text: {best_text[:200]}..." if len(best_text) > 200 else f"[BeamSearch] Text: {best_text}")
+        
+        return best_text, total_prompt_tokens, total_completion_tokens
+    
+    def get_num_expansions(self) -> int:
+        """Return the number of expansions from the last generate() call."""
+        return getattr(self, '_last_num_expansions', 0)
+    
+    def get_best_score(self) -> float:
+        """Return the best beam score from the last generate() call."""
+        return getattr(self, '_last_best_score', 0.0)
+
+
 class TemperatureSampling(SamplingStrategy):
     """Standard temperature sampling."""
     

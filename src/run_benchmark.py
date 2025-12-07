@@ -21,6 +21,7 @@ from benchmark_runner import (
     HumanEvalBenchmark,
     GreedySampling,
     MCMCSampling,
+    BeamSearchSampling,
     TemperatureSampling,
     BenchmarkMetrics
 )
@@ -160,6 +161,17 @@ def main(cfg: DictConfig):
             restrict_to_last_n=cfg.mcmc.restrict_to_last_n,
             block_size=cfg.mcmc.block_size,
             debug=cfg.mcmc.debug,
+        ))
+
+    if cfg.beam_search.enabled:
+        strategies.append(BeamSearchSampling(
+            alpha=cfg.beam_search.alpha,
+            beam_width=cfg.beam_search.beam_width,
+            tokens_per_step=cfg.beam_search.tokens_per_step,
+            length_penalty=cfg.beam_search.length_penalty,
+            proposal_temperature=cfg.beam_search.proposal_temperature,
+            top_logprobs=cfg.beam_search.top_logprobs,
+            debug=cfg.beam_search.debug,
         ))
 
     if cfg.temperature_sampling.enabled:
