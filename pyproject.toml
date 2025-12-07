@@ -1,0 +1,44 @@
+[project]
+name = "psamp"
+version = "0.1.0"
+description = "Power sampling for reasoning evaluation"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0.0",
+    "torchvision",
+    "vllm>=0.6.0",
+    "transformers>=4.40.0",
+    "huggingface-hub",
+    "accelerate",
+    "datasets",
+    "openai>=1.0.0",
+    "numpy",
+    "scipy",
+    "scikit-learn",
+    "pandas",
+    "matplotlib",
+    "tqdm",
+    "pyyaml",
+    "requests",
+    "alpaca-eval",
+    "ray",
+    "tiktoken",
+    "sentencepiece",
+    "safetensors",
+    "einops",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ipython",
+    "ipykernel",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
