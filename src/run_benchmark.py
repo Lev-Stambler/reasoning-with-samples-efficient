@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
 """
-Main script for comparing different sampling strategies on various benchmarks.
-Supports running multiple models, benchmarks, and strategies in parallel.
+Hydra-based script for comparing different sampling strategies on various benchmarks.
 Outputs a comprehensive comparison table.
+
+Usage:
+    python run_benchmark.py                           # Run with default config
+    python run_benchmark.py mcmc.steps=5              # Override MCMC steps
+    python run_benchmark.py mcmc.alpha=2.0            # Override MCMC alpha
+    python run_benchmark.py benchmark.num_problems=20 # More problems
+    python run_benchmark.py model.name=grok-3         # Different model
+
+Multirun (batch comparisons):
+    python run_benchmark.py -m benchmark.name=humaneval,swebench
+    python run_benchmark.py -m mcmc.alpha=1.0,1.67,4.0
 """
 import os
-import argparse
-from itertools import product
+import hydra
+from omegaconf import DictConfig, OmegaConf
 from dotenv import load_dotenv
 from tabulate import tabulate
 from benchmark_runner import (
@@ -35,8 +45,7 @@ BENCHMARK_REGISTRY = {
 
 def print_results_table(metrics_list: list[BenchmarkMetrics]):
     """Print a formatted table of benchmark results."""
-    
-    # Prepare table data
+
     headers = [
         "Benchmark",
         "Model",
@@ -49,7 +58,7 @@ def print_results_table(metrics_list: list[BenchmarkMetrics]):
         "Cost/Problem ($)",
         "Problems"
     ]
-    
+
     rows = []
     for metrics in metrics_list:
         rows.append([
@@ -64,23 +73,21 @@ def print_results_table(metrics_list: list[BenchmarkMetrics]):
             f"${metrics.cost_per_problem:.4f}",
             metrics.num_problems
         ])
-    
-    # Sort by pass rate (descending)
+
     rows.sort(key=lambda x: float(x[3].rstrip('%')), reverse=True)
-    
+
     benchmark_name = metrics_list[0].benchmark_name if metrics_list else "BENCHMARK"
     print("\n" + "="*110)
     print(f"{benchmark_name.upper()} BENCHMARK RESULTS")
     print("="*110)
     print(tabulate(rows, headers=headers, tablefmt="grid"))
     print("="*100)
-    
-    # Find best performing
+
     if rows:
         best = rows[0]
         print(f"\n🏆 Best Overall: {best[2]} on {best[0]} with {best[1]}")
         print(f"   Pass Rate: {best[3]} | Time: {best[4]}s | Cost: {best[8]}")
-        
+
         # Find best by benchmark
         benchmarks = set(m.benchmark_name for m in metrics_list)
         if len(benchmarks) > 1:
@@ -90,7 +97,7 @@ def print_results_table(metrics_list: list[BenchmarkMetrics]):
                 if bench_metrics:
                     best_bench = max(bench_metrics, key=lambda x: x.pass_rate)
                     print(f"   {bench}: {best_bench.strategy_name} ({best_bench.model_name}) - {best_bench.pass_rate:.1f}%")
-        
+
         # Find best by model
         models = set(m.model_name for m in metrics_list)
         if len(models) > 1:
@@ -106,233 +113,122 @@ def print_summary(metrics_list: list[BenchmarkMetrics]):
     """Print a summary of key insights."""
     if not metrics_list:
         return
-    
+
     print("\n" + "="*100)
     print("SUMMARY")
     print("="*100)
-    
-    # Pass rate comparison
-    print("\n📊 Pass Rate Comparison:")
+
+    print("\nPass Rate Comparison:")
     for metrics in sorted(metrics_list, key=lambda x: x.pass_rate, reverse=True):
         bar_length = int(metrics.pass_rate / 2)
-        bar = "█" * bar_length
+        bar = "#" * bar_length
         print(f"  {metrics.strategy_name:30s} {bar} {metrics.pass_rate:.1f}%")
-    
-    # Time efficiency
-    print("\n⚡ Time Efficiency:")
+
+    print("\nTime Efficiency:")
     for metrics in sorted(metrics_list, key=lambda x: x.avg_time):
         print(f"  {metrics.strategy_name:30s} {metrics.avg_time:.2f}s avg per problem")
-    
-    # Token usage
-    print("\n🎫 Token Usage:")
+
+    print("\nToken Usage:")
     for metrics in sorted(metrics_list, key=lambda x: x.avg_tokens_per_problem):
         print(f"  {metrics.strategy_name:30s} {metrics.avg_tokens_per_problem:.0f} tokens avg per problem")
-    
+
     # Cost efficiency
     print("\n💰 Cost Efficiency:")
     for metrics in sorted(metrics_list, key=lambda x: x.cost_per_problem):
         print(f"  {metrics.strategy_name:30s} ${metrics.cost_per_problem:.4f} per problem (${metrics.total_cost:.4f} total)")
-    
+
     print("="*100 + "\n")
 
 
-def parse_list_arg(arg_value: str) -> list[str]:
-    """Parse comma-separated argument into list."""
-    return [item.strip() for item in arg_value.split(',')]
+def print_config(cfg: DictConfig):
+    """Print the current configuration."""
+    print("\n" + "="*60)
+    print("CONFIGURATION")
+    print("="*60)
+    print(OmegaConf.to_yaml(cfg))
+    print("="*60 + "\n")
 
 
-def parse_numeric_list_arg(arg_value: str) -> list[float]:
-    """Parse comma-separated numeric argument into list."""
-    return [float(item.strip()) for item in arg_value.split(',')]
+@hydra.main(version_base=None, config_path="conf", config_name="config")
+def main(cfg: DictConfig):
+    """Main entry point with Hydra configuration."""
 
+    if cfg.output.verbose:
+        print_config(cfg)
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Compare sampling strategies on various benchmarks. "
-                    "All arguments support comma-separated lists for batch comparison.",
-        epilog="Example: --model grok-beta,grok-2-1212 --benchmark humaneval,swebench --strategies greedy,mcmc"
-    )
-    parser.add_argument(
-        "--benchmark",
-        type=str,
-        default="humaneval",
-        help=f"Benchmark(s) to use, comma-separated (default: humaneval). "
-             f"Available: {', '.join(BENCHMARK_REGISTRY.keys())}"
-    )
-    parser.add_argument(
-        "--model",
-        type=str,
-        default="grok-2-1212",
-        help="Model(s) to use, comma-separated (default: grok-2-1212). "
-             "Example: grok-beta,grok-2-1212"
-    )
-    parser.add_argument(
-        "--num-problems",
-        type=str,
-        default="10",
-        help="Number of problems to test, comma-separated for multiple runs (default: 10). "
-             "Example: 5,10,20"
-    )
-    parser.add_argument(
-        "--max-tokens",
-        type=int,
-        default=None,
-        help="Maximum tokens per completion (default: 512 for HumanEval, 2048 for SWE-bench)"
-    )
-    parser.add_argument(
-        "--strategies",
-        type=str,
-        default="greedy,mcmc,temp",
-        help="Comma-separated list of strategies: greedy,mcmc,temp (default: all)"
-    )
-    parser.add_argument(
-        "--mcmc-steps",
-        type=str,
-        default="3",
-        help="Number of MCMC steps, comma-separated for multiple configurations (default: 3). "
-             "Example: 2,3,5"
-    )
-    parser.add_argument(
-        "--temperature",
-        type=str,
-        default="0.8",
-        help="Temperature for sampling strategies, comma-separated (default: 0.8). "
-             "Example: 0.7,0.8,0.9"
-    )
-    args = parser.parse_args()
-    
     # Check API key
     api_key = os.getenv("XAI_API_KEY")
     if not api_key:
-        print("❌ Error: Please set XAI_API_KEY environment variable")
+        print("Error: Please set XAI_API_KEY environment variable")
         print("   Get your API key from: https://console.x.ai/")
         return
-    
-    # Parse list arguments
-    benchmark_names = parse_list_arg(args.benchmark)
-    model_names = parse_list_arg(args.model)
-    num_problems_list = [int(x) for x in parse_list_arg(args.num_problems)]
-    strategy_names = parse_list_arg(args.strategies.lower())
-    mcmc_steps_list = [int(x) for x in parse_list_arg(args.mcmc_steps)]
-    temperature_list = [float(x) for x in parse_list_arg(args.temperature)]
-    
-    # Validate benchmarks
-    for bench in benchmark_names:
-        if bench not in BENCHMARK_REGISTRY:
-            print(f"❌ Error: Unknown benchmark '{bench}'")
-            print(f"   Available: {', '.join(BENCHMARK_REGISTRY.keys())}")
-            return
-    
-    # Validate strategies
-    valid_strategies = {'greedy', 'mcmc', 'temp'}
-    for strat in strategy_names:
-        if strat not in valid_strategies:
-            print(f"❌ Error: Unknown strategy '{strat}'")
-            print(f"   Available: {', '.join(valid_strategies)}")
-            return
-    
-    # Build strategy configurations
-    # For MCMC and temp, create variants for each temperature/mcmc_steps combination
-    strategy_configs = []
-    
-    if 'greedy' in strategy_names:
-        strategy_configs.append(('greedy', None, None))
-    
-    if 'mcmc' in strategy_names:
-        for temp in temperature_list:
-            for steps in mcmc_steps_list:
-                strategy_configs.append(('mcmc', temp, steps))
-    
-    if 'temp' in strategy_names:
-        for temp in temperature_list:
-            strategy_configs.append(('temp', temp, None))
-    
-    # Generate all combinations
-    all_combinations = list(product(
-        model_names,
-        benchmark_names,
-        num_problems_list,
-        strategy_configs
-    ))
-    
-    total_runs = len(all_combinations)
-    print(f"\n{'='*80}")
-    print(f"RUNNING {total_runs} BENCHMARK COMBINATIONS")
-    print(f"{'='*80}")
-    print(f"Models: {', '.join(model_names)}")
-    print(f"Benchmarks: {', '.join(benchmark_names)}")
-    print(f"Problem counts: {', '.join(map(str, num_problems_list))}")
-    print(f"Strategies: {len(strategy_configs)} configurations")
-    print(f"{'='*80}\n")
-    
-    # Collect all results
-    all_metrics = []
-    
+
+    # Initialize benchmark
+    if cfg.benchmark.name not in BENCHMARK_REGISTRY:
+        print(f"❌ Error: Unknown benchmark '{cfg.benchmark.name}'")
+        print(f"   Available: {', '.join(BENCHMARK_REGISTRY.keys())}")
+        return
+
+    benchmark_class = BENCHMARK_REGISTRY[cfg.benchmark.name]
+    benchmark = benchmark_class()
+
+    # Initialize runner
+    runner = BenchmarkRunner(
+        benchmark=benchmark,
+        model_name=cfg.model.name,
+        api_key=api_key,
+        base_url=cfg.model.base_url,
+        output_dir="predictions"
+    )
+
+    # Setup strategies based on config
+    strategies = []
+
+    if cfg.greedy.enabled:
+        strategies.append(GreedySampling())
+
+    if cfg.mcmc.enabled:
+        strategies.append(MCMCSampling(
+            alpha=cfg.mcmc.alpha,
+            mcmc_steps=cfg.mcmc.steps,
+            top_logprobs=cfg.mcmc.top_logprobs,
+            proposal_temperature=cfg.mcmc.proposal_temperature,
+            restrict_to_last_n=cfg.mcmc.restrict_to_last_n,
+            block_size=cfg.mcmc.block_size,
+            debug=cfg.mcmc.debug,
+        ))
+
+    if cfg.temperature_sampling.enabled:
+        strategies.append(TemperatureSampling(
+            temperature=cfg.temperature_sampling.temperature
+        ))
+
+    if not strategies:
+        print("❌ Error: No strategies enabled in configuration")
+        return
+
+    # Determine max_tokens based on benchmark if not explicitly set
+    max_tokens = cfg.benchmark.max_tokens
+    if cfg.benchmark.name in ["swebench", "swebench-verified"] and max_tokens == 512:
+        # Use higher default for SWE-bench
+        max_tokens = 2048
+
+    # Run benchmark
     try:
-        for run_idx, (model_name, benchmark_name, num_problems, (strat_type, temp, steps)) in enumerate(all_combinations, 1):
-            print(f"\n{'='*80}")
-            print(f"RUN {run_idx}/{total_runs}")
-            print(f"Model: {model_name} | Benchmark: {benchmark_name} | Problems: {num_problems}")
-            
-            # Create strategy
-            if strat_type == 'greedy':
-                strategy = GreedySampling()
-                print(f"Strategy: Greedy")
-            elif strat_type == 'mcmc':
-                strategy = MCMCSampling(temperature=temp, mcmc_steps=steps)
-                print(f"Strategy: MCMC (temp={temp}, steps={steps})")
-            elif strat_type == 'temp':
-                strategy = TemperatureSampling(temperature=temp)
-                print(f"Strategy: Temperature (temp={temp})")
-            
-            print(f"{'='*80}")
-            
-            # Initialize benchmark
-            benchmark_class = BENCHMARK_REGISTRY[benchmark_name]
-            benchmark = benchmark_class()
-            
-            # Initialize runner
-            runner = BenchmarkRunner(
-                benchmark=benchmark,
-                model_name=model_name,
-                api_key=api_key,
-                output_dir="predictions"
-            )
-            
-            # Set max_tokens based on benchmark if not specified
-            max_tokens = args.max_tokens
-            if max_tokens is None:
-                if benchmark_name in ["swebench", "swebench-verified"]:
-                    max_tokens = 2048
-                else:
-                    max_tokens = 512
-            
-            # Run single benchmark with run_id for unique filenames
-            run_id = f"run{run_idx}"
-            metrics_dict = runner.run_benchmark(
-                strategies=[strategy],
-                num_problems=num_problems,
-                max_tokens=max_tokens,
-                run_id=run_id
-            )
-            
-            # Collect metrics
-            for metrics in metrics_dict.values():
-                all_metrics.append(metrics)
-        
-        # Display combined results
-        if all_metrics:
-            print(f"\n\n{'='*80}")
-            print("COMBINED RESULTS - ALL RUNS")
-            print(f"{'='*80}\n")
-            print_results_table(all_metrics)
-            print_summary(all_metrics)
-        
+        metrics_dict = runner.run_benchmark(
+            strategies=strategies,
+            num_problems=cfg.benchmark.num_problems,
+            max_tokens=max_tokens
+        )
+
+        metrics_list = list(metrics_dict.values())
+
+        # Display results
+        print_results_table(metrics_list)
+        print_summary(metrics_list)
+
     except KeyboardInterrupt:
         print("\n\n⚠️  Benchmark interrupted by user")
-        if all_metrics:
-            print("\nShowing results from completed runs:")
-            print_results_table(all_metrics)
     except Exception as e:
         print(f"\n❌ Error during benchmark: {str(e)}")
         import traceback

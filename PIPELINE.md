@@ -61,44 +61,72 @@ Generate patches for SWE-bench problems using your LLM.
 
 ```bash
 python src/run_benchmark.py \
-  --model grok-4-1-fast-reasoning \
-  --benchmark swebench \
-  --num-problems 5 \
-  --strategies greedy
+  model.name=grok-4-1-fast-reasoning \
+  benchmark.name=swebench \
+  benchmark.num_problems=5 \
+  mcmc.enabled=false \
+  temperature_sampling.enabled=false
 ```
 
 **Output:**
 ```
-predictions/swe_bench_lite_grok_4_1_fast_reasoning_Greedy_run1.jsonl
+predictions/swe_bench_lite_grok_4_1_fast_reasoning_Greedy.jsonl
 ```
 
-### Parameters
+### Parameters (Hydra Config)
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `--model` | Model to use (e.g., grok-4-1-fast-reasoning) | Required |
-| `--benchmark` | Benchmark: `swebench`, `swebench-verified`, `humaneval` | Required |
-| `--num-problems` | Number of problems to test | All |
-| `--strategies` | Sampling strategies: `greedy`, `mcmc`, `temperature` | `greedy` |
-| `--temperature` | Temperature for sampling | 0.8 |
-| `--mcmc-steps` | MCMC steps | 3 |
+| `model.name` | Model to use (e.g., grok-4-1-fast-reasoning) | grok-2-1212 |
+| `benchmark.name` | Benchmark: `swebench`, `swebench-verified`, `humaneval` | humaneval |
+| `benchmark.num_problems` | Number of problems to test | 10 |
+| `benchmark.max_tokens` | Max tokens per completion | 512 (auto 2048 for SWE-bench) |
+| `greedy.enabled` | Enable greedy sampling | true |
+| `mcmc.enabled` | Enable MCMC sampling | true |
+| `mcmc.alpha` | MCMC power factor | 1.67 |
+| `mcmc.steps` | MCMC steps per block | 10 |
+| `temperature_sampling.enabled` | Enable temperature sampling | true |
+| `temperature_sampling.temperature` | Temperature | 0.8 |
 
 ### Example: Multiple Strategies
 
 ```bash
+# Run all strategies (greedy, mcmc, temperature)
 python src/run_benchmark.py \
-  --model grok-4-1-fast-reasoning \
-  --benchmark swebench \
-  --num-problems 10 \
-  --strategies greedy,mcmc \
-  --mcmc-steps 5 \
-  --temperature 0.8
+  model.name=grok-4-1-fast-reasoning \
+  benchmark.name=swebench \
+  benchmark.num_problems=10 \
+  mcmc.steps=5 \
+  mcmc.alpha=1.67
 ```
 
-Generates 2 prediction files (one per strategy):
+### Example: Only MCMC
+
+```bash
+python src/run_benchmark.py \
+  model.name=grok-4-1-fast-reasoning \
+  benchmark.name=swebench \
+  benchmark.num_problems=10 \
+  greedy.enabled=false \
+  temperature_sampling.enabled=false \
+  mcmc.steps=5
 ```
-predictions/swe_bench_lite_grok_4_1_fast_reasoning_Greedy_run1.jsonl
-predictions/swe_bench_lite_grok_4_1_fast_reasoning_MCMC_steps5_run2.jsonl
+
+### Batch Runs with Hydra Multirun
+
+Run multiple configurations in one command:
+
+```bash
+# Compare models
+python src/run_benchmark.py -m \
+  model.name=grok-4-1-fast-reasoning,grok-2-1212 \
+  benchmark.name=swebench \
+  benchmark.num_problems=10
+
+# Sweep MCMC alpha
+python src/run_benchmark.py -m \
+  mcmc.alpha=1.0,1.67,4.0 \
+  benchmark.name=swebench
 ```
 
 ### Prediction File Format
@@ -136,7 +164,7 @@ Run predictions against actual SWE-bench test suites in the cloud.
 
 ```bash
 modal run scripts/modal_evaluate.py \
-  --prediction predictions/swe_bench_lite_grok_4_1_fast_reasoning_Greedy_run1.jsonl
+  --prediction predictions/swe_bench_lite_grok_4_1_fast_reasoning_Greedy.jsonl
 ```
 
 ### Evaluate All Predictions
@@ -212,7 +240,7 @@ Results are saved to `results/` directory.
 ### Result File Format
 
 ```bash
-cat results/swe_bench_lite_grok_4_1_fast_reasoning_Greedy_run1_results.json
+cat results/swe_bench_lite_grok_4_1_fast_reasoning_Greedy_results.json
 ```
 
 ```json
@@ -229,8 +257,8 @@ cat results/swe_bench_lite_grok_4_1_fast_reasoning_Greedy_run1_results.json
 
 The evaluation output shows:
 ```
-📊 Instances resolved: X
-📊 Instances unresolved: Y
+Instances resolved: X
+Instances unresolved: Y
 ```
 
 **Pass Rate = X / (X + Y)**
@@ -242,36 +270,36 @@ modal run scripts/modal_evaluate.py --prediction predictions/file.jsonl
 ```
 
 ```
-🔑 Reading Modal credentials from ~/.modal.toml
-✅ Found active Modal profile: shivaperi47
-🚀 Starting SWE-bench evaluation on Modal
-📦 Found 1 prediction file(s)
-📊 Dataset: princeton-nlp/SWE-bench_Lite
-⚙️  Workers: 16
+Reading Modal credentials from ~/.modal.toml
+Found active Modal profile: shivaperi47
+Starting SWE-bench evaluation on Modal
+Found 1 prediction file(s)
+Dataset: princeton-nlp/SWE-bench_Lite
+Workers: 16
 
-[1/1] Processing: swe_bench_lite_grok_4_1_fast_reasoning_Greedy_run1.jsonl
-📤 Uploaded: ...
-🚀 Starting evaluation for: ...
-🔑 Configuring Modal credentials...
-✅ Modal credentials configured
+[1/1] Processing: swe_bench_lite_grok_4_1_fast_reasoning_Greedy.jsonl
+Uploaded: ...
+Starting evaluation for: ...
+Configuring Modal credentials...
+Modal credentials configured
 
 [Wait 15-30 minutes...]
 
-📊 Instances resolved: 3
-📊 Instances unresolved: 7
+Instances resolved: 3
+Instances unresolved: 7
 
 ============================================================
-📊 EVALUATION SUMMARY
+EVALUATION SUMMARY
 ============================================================
 Total evaluations: 1
-✅ Successful: 1
-❌ Failed: 0
+Successful: 1
+Failed: 0
 
-💾 Saving results locally...
-📥 Downloaded results for: swe_bench_lite_grok_4_1_fast_reasoning_Greedy_run1
-   Saved: results/swe_bench_lite_grok_4_1_fast_reasoning_Greedy_run1_results.json
+Saving results locally...
+Downloaded results for: swe_bench_lite_grok_4_1_fast_reasoning_Greedy
+   Saved: results/swe_bench_lite_grok_4_1_fast_reasoning_Greedy_results.json
 
-✨ Done! Results saved to results/ directory
+Done! Results saved to results/ directory
 ```
 
 **Result:** 3/10 problems solved = 30% pass rate
@@ -285,18 +313,19 @@ Total evaluations: 1
 #### 1. Generate Predictions
 
 ```bash
+# Run with both greedy and MCMC
 python src/run_benchmark.py \
-  --model grok-4-1-fast-reasoning \
-  --benchmark swebench \
-  --num-problems 10 \
-  --strategies greedy,mcmc \
-  --mcmc-steps 5
+  model.name=grok-4-1-fast-reasoning \
+  benchmark.name=swebench \
+  benchmark.num_problems=10 \
+  mcmc.steps=5 \
+  temperature_sampling.enabled=false
 ```
 
 **Output:**
 ```
-predictions/swe_bench_lite_grok_4_1_fast_reasoning_Greedy_run1.jsonl
-predictions/swe_bench_lite_grok_4_1_fast_reasoning_MCMC_steps5_run2.jsonl
+predictions/swe_bench_lite_grok_4_1_fast_reasoning_Greedy.jsonl
+predictions/swe_bench_lite_grok_4_1_fast_reasoning_MCMC(...).jsonl
 ```
 
 **Cost:** ~$0.20 (API calls)
@@ -342,7 +371,7 @@ patch: **** missing line number at line 5: @@ -XXX,YYY +XXX,YYY @@
 
 **Cause:** Your model generated invalid patches with placeholder line numbers.
 
-**Fix:** 
+**Fix:**
 1. Check prediction file: `cat predictions/file.jsonl | head -1 | jq -r '.model_patch'`
 2. Verify diff has real line numbers: `@@ -10,5 +10,8 @@` (not `@@ -XXX,YYY +XXX,YYY @@`)
 3. If invalid, the model needs better prompting or different model
@@ -375,9 +404,10 @@ modal run scripts/modal_evaluate.py \
 **Solution 2 - Test with fewer problems first:**
 ```bash
 python src/run_benchmark.py \
-  --num-problems 2 \
-  --benchmark swebench \
-  --strategies greedy
+  benchmark.num_problems=2 \
+  benchmark.name=swebench \
+  mcmc.enabled=false \
+  temperature_sampling.enabled=false
 ```
 
 ### Issue: "Out of Modal credits"
@@ -413,11 +443,13 @@ pip install -e ".[eval]"
 
 ```bash
 # Test with 2 problems first
-python src/run_benchmark.py --num-problems 2 --benchmark swebench --strategies greedy
+python src/run_benchmark.py benchmark.num_problems=2 benchmark.name=swebench \
+  mcmc.enabled=false temperature_sampling.enabled=false
 modal run scripts/modal_evaluate.py --predictions-dir predictions/
 
 # If successful, scale up
-python src/run_benchmark.py --num-problems 10 --benchmark swebench --strategies greedy
+python src/run_benchmark.py benchmark.num_problems=10 benchmark.name=swebench \
+  mcmc.enabled=false temperature_sampling.enabled=false
 modal run scripts/modal_evaluate.py --predictions-dir predictions/
 ```
 
@@ -427,7 +459,7 @@ SWE-bench is expensive and slow. Use HumanEval for quick testing:
 
 ```bash
 # Fast and cheap
-python src/run_benchmark.py --benchmark humaneval --num-problems 20 --strategies greedy,mcmc
+python src/run_benchmark.py benchmark.name=humaneval benchmark.num_problems=20
 
 # Evaluate locally (no Modal needed)
 # HumanEval has built-in evaluation
@@ -439,7 +471,7 @@ Then switch to SWE-bench for final validation.
 
 - Check Modal dashboard regularly
 - Start with `--max-workers 8` (balanced)
-- Use `--num-problems 5-10` for testing
+- Use `benchmark.num_problems=5` or `10` for testing
 - Full runs (300 problems) should be final validation only
 
 ### 4. Validate Predictions Before Evaluating
@@ -449,8 +481,8 @@ Then switch to SWE-bench for final validation.
 cat predictions/file.jsonl | head -1 | jq -r '.model_patch'
 
 # Should see valid diff format with real line numbers:
-# @@ -10,5 +10,8 @@  ✅ Good
-# @@ -XXX,YYY +XXX,YYY @@  ❌ Bad
+# @@ -10,5 +10,8 @@  Good
+# @@ -XXX,YYY +XXX,YYY @@  Bad
 ```
 
 Don't waste Modal credits on invalid predictions!
@@ -462,10 +494,11 @@ Don't waste Modal credits on invalid predictions!
 ### Generate Predictions
 ```bash
 python src/run_benchmark.py \
-  --model grok-4-1-fast-reasoning \
-  --benchmark swebench \
-  --num-problems 10 \
-  --strategies greedy
+  model.name=grok-4-1-fast-reasoning \
+  benchmark.name=swebench \
+  benchmark.num_problems=10 \
+  mcmc.enabled=false \
+  temperature_sampling.enabled=false
 ```
 
 ### Evaluate on Modal
@@ -503,20 +536,19 @@ modal run scripts/modal_evaluate.py \
 modal run scripts/modal_evaluate.py --list-only
 
 # Download specific result
-modal run scripts/modal_evaluate.py --download swe_bench_lite_model_strategy_run1
+modal run scripts/modal_evaluate.py --download swe_bench_lite_model_strategy
 ```
 
 ### Batch Multiple Models
 
 ```bash
-# Generate for multiple models
-for model in grok-4-1-fast-reasoning grok-4-1-fast-non-reasoning; do
-  python src/run_benchmark.py \
-    --model $model \
-    --benchmark swebench \
-    --num-problems 10 \
-    --strategies greedy
-done
+# Generate for multiple models using Hydra multirun
+python src/run_benchmark.py -m \
+  model.name=grok-4-1-fast-reasoning,grok-4-1-fast-non-reasoning \
+  benchmark.name=swebench \
+  benchmark.num_problems=10 \
+  mcmc.enabled=false \
+  temperature_sampling.enabled=false
 
 # Evaluate all at once
 modal run scripts/modal_evaluate.py --predictions-dir predictions/

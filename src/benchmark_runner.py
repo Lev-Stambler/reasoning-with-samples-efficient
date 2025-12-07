@@ -146,10 +146,25 @@ class MCMCSampling(SamplingStrategy):
     For α=4: proposals with higher log probability are 3x more likely to be accepted.
     """
 
-    def __init__(self, alpha: float = 4.0, mcmc_steps: int = 10):
-        super().__init__(f"MCMC(α={alpha},steps={mcmc_steps})")
+    def __init__(
+        self,
+        alpha: float = 4.0,
+        mcmc_steps: int = 10,
+        top_logprobs: int = 5,
+        proposal_temperature: float = 1.0,
+        temperature: float = None,  # Legacy alias for proposal_temperature
+        restrict_to_last_n: int = None,  # Only resample last N tokens (None = disabled)
+    ):
+        name = f"MCMC(α={alpha},steps={mcmc_steps})"
+        if restrict_to_last_n is not None:
+            name += f",lastN={restrict_to_last_n}"
+        super().__init__(name)
         self.alpha = alpha
         self.mcmc_steps = mcmc_steps
+        self.top_logprobs = top_logprobs
+        # Support legacy 'temperature' parameter as alias for proposal_temperature
+        self.proposal_temperature = temperature if temperature is not None else proposal_temperature
+        self.restrict_to_last_n = restrict_to_last_n
 
     def _extract_logprobs_with_tokens(self, response) -> tuple[list[str], list[float], list[float]]:
         """
@@ -172,10 +187,10 @@ class MCMCSampling(SamplingStrategy):
         response = client.chat.completions.create(
             model=client.default_model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=1.0,
+            temperature=self.proposal_temperature,
             max_tokens=max_tokens,
             logprobs=True,
-            top_logprobs=5,
+            top_logprobs=self.top_logprobs,
         )
 
         text = response.choices[0].message.content
@@ -199,10 +214,10 @@ class MCMCSampling(SamplingStrategy):
                 {"role": "user", "content": prompt},
                 {"role": "assistant", "content": prefix}  # Continue from here
             ],
-            temperature=1.0,
+            temperature=self.proposal_temperature,
             max_tokens=max_tokens,
             logprobs=True,
-            top_logprobs=5,
+            top_logprobs=self.top_logprobs,
         )
 
         continuation = response.choices[0].message.content
@@ -244,8 +259,13 @@ class MCMCSampling(SamplingStrategy):
 
             attempts += 1
 
-            # Pick random position to regenerate from (at least keep first token)
-            idx = random.randint(1, len(tokens_cur) - 1)
+            # Pick random position to regenerate from
+            # If restrict_to_last_n is set, only resample from last N tokens
+            if self.restrict_to_last_n is not None:
+                min_idx = max(1, len(tokens_cur) - self.restrict_to_last_n)
+            else:
+                min_idx = 1  # At least keep first token
+            idx = random.randint(min_idx, len(tokens_cur) - 1)
 
             # Prefix to keep (as text)
             prefix = "".join(tokens_cur[:idx])
