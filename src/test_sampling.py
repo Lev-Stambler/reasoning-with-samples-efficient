@@ -1,101 +1,125 @@
-import torch
-import torch.nn.functional as F
-from llm_wrapper import CustomSamplerLLM
+import os
+import random
+from openai import OpenAI
+from dotenv import load_dotenv
+from datasets import load_dataset
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Model configuration
+GROK_MODEL = "grok-2-1212"  # Update to "grok-beta" or other model as needed
 
 
-def greedy_decode(llm, prompt, max_tokens=50):
-    """Greedy decoding: always pick the most likely token."""
-    input_ids = llm.tokenizer.encode(prompt, return_tensors="pt").to(llm.device)
-    
-    for _ in range(max_tokens):
-        outputs = llm.model(input_ids)
-        next_token_logits = outputs.logits[:, -1, :]
-        next_token = torch.argmax(next_token_logits, dim=-1, keepdim=True)
-        input_ids = torch.cat([input_ids, next_token], dim=1)
-        
-        if next_token.item() == llm.tokenizer.eos_token_id:
-            break
-    
-    return llm.tokenizer.decode(input_ids[0], skip_special_tokens=True)
+def greedy_decode(client, prompt, max_tokens=512):
+    """Greedy decoding: temperature=0 for deterministic output."""
+    response = client.chat.completions.create(
+        model=GROK_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.0,
+        max_tokens=max_tokens,
+    )
+    return response.choices[0].message.content
 
 
-def mcmc_sampling(llm, prompt, max_tokens=50, temperature=0.8, mcmc_steps=3):
+def mcmc_sampling(client, prompt, max_tokens=512, temperature=0.8, mcmc_steps=3):
     """
-    Simple MCMC-inspired sampling: generate tokens, then refine via accept/reject.
+    MCMC-inspired sampling: generate multiple samples and accept/reject.
+    Simulates MCMC by generating variants and comparing their likelihoods.
     """
-    input_ids = llm.tokenizer.encode(prompt, return_tensors="pt").to(llm.device)
-    prompt_len = input_ids.size(1)
+    # Initial sample with temperature
+    initial_response = client.chat.completions.create(
+        model=GROK_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=temperature,
+        max_tokens=max_tokens,
+        logprobs=True,
+        top_logprobs=5,
+    )
     
-    # Initial generation with sampling
-    for _ in range(max_tokens):
-        outputs = llm.model(input_ids)
-        next_token_logits = outputs.logits[:, -1, :] / temperature
-        probs = F.softmax(next_token_logits, dim=-1)
-        next_token = torch.multinomial(probs, num_samples=1)
-        input_ids = torch.cat([input_ids, next_token], dim=1)
-        
-        if next_token.item() == llm.tokenizer.eos_token_id:
-            break
+    current_text = initial_response.choices[0].message.content
+    current_logprob = sum([
+        token.logprob for token in initial_response.choices[0].logprobs.content
+    ]) if initial_response.choices[0].logprobs else 0
     
-    # MCMC refinement: randomly resample from a position
-    for _ in range(mcmc_steps):
-        if input_ids.size(1) <= prompt_len + 1:
-            break
+    # MCMC refinement steps
+    for step in range(mcmc_steps):
+        # Generate alternative sample
+        proposal_response = client.chat.completions.create(
+            model=GROK_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temperature * 1.2,  # Slightly higher temp for exploration
+            max_tokens=max_tokens,
+            logprobs=True,
+            top_logprobs=5,
+        )
         
-        # Pick a random position to resample from
-        resample_pos = torch.randint(prompt_len, input_ids.size(1) - 1, (1,)).item()
-        prefix = input_ids[:, :resample_pos]
+        proposal_text = proposal_response.choices[0].message.content
+        proposal_logprob = sum([
+            token.logprob for token in proposal_response.choices[0].logprobs.content
+        ]) if proposal_response.choices[0].logprobs else 0
         
-        # Get log prob of current continuation
-        outputs_current = llm.model(input_ids[:, :resample_pos + 1])
-        logits_current = outputs_current.logits[:, -1, :] / temperature
-        current_token = input_ids[:, resample_pos]
-        log_prob_current = F.log_softmax(logits_current, dim=-1)[0, current_token]
+        # Metropolis-Hastings acceptance
+        log_ratio = proposal_logprob - current_logprob
+        accept_prob = min(1.0, 2.718 ** log_ratio)  # exp(log_ratio)
         
-        # Propose new token
-        probs_new = F.softmax(logits_current, dim=-1)
-        new_token = torch.multinomial(probs_new, num_samples=1)
-        log_prob_new = F.log_softmax(logits_current, dim=-1)[0, new_token]
-        
-        # Accept/reject with Metropolis-Hastings ratio
-        log_ratio = log_prob_new - log_prob_current
-        if torch.rand(1).item() < torch.exp(log_ratio).item():
-            # Accept: rebuild sequence with new token
-            input_ids = torch.cat([prefix, new_token], dim=1)
+        if random.random() < accept_prob:
+            current_text = proposal_text
+            current_logprob = proposal_logprob
+            print(f"  [Step {step+1}] Accepted (log_ratio: {log_ratio:.3f})")
+        else:
+            print(f"  [Step {step+1}] Rejected (log_ratio: {log_ratio:.3f})")
     
-    return llm.tokenizer.decode(input_ids[0], skip_special_tokens=True)
+    return current_text
 
 
-def run_comparison(model_name="microsoft/Phi-3-mini-4k-instruct"):
-    """Compare greedy vs MCMC sampling on a simple prompt."""
-    print(f"Loading model: {model_name}...")
-    llm = CustomSamplerLLM(model_name)
+def run_comparison(num_problems=3):
+    """Compare greedy vs MCMC sampling on HumanEval benchmark."""
+    api_key = os.getenv("XAI_API_KEY")
+    if not api_key:
+        print("Error: Please set XAI_API_KEY environment variable")
+        print("Get your API key from: https://console.x.ai/")
+        return
     
-    prompts = [
-        "The capital of France is",
-        "To solve this problem, first we need to",
-        "Once upon a time in a distant galaxy,"
-    ]
+    client = OpenAI(
+        api_key=api_key,
+        base_url="https://api.x.ai/v1"
+    )
     
-    for i, prompt in enumerate(prompts, 1):
-        print(f"\n{'='*70}")
-        print(f"Test {i}: {prompt}")
-        print('='*70)
+    # Load HumanEval dataset
+    print("Loading HumanEval dataset...")
+    dataset = load_dataset("openai/openai_humaneval", split="test")
+    
+    # Test on first few problems
+    for i in range(num_problems):
+        problem = dataset[i]
+        task_id = problem["task_id"]
+        prompt = problem["prompt"]
+        
+        print(f"\n{'='*80}")
+        print(f"Problem {i+1}: {task_id}")
+        print('='*80)
+        print(f"\nPrompt:\n{prompt[:200]}...")  # Show first 200 chars
         
         # Greedy decoding
         print("\n[GREEDY DECODING]")
-        greedy_output = greedy_decode(llm, prompt, max_tokens=40)
-        print(greedy_output)
+        greedy_output = greedy_decode(client, prompt, max_tokens=512)
+        print(greedy_output[:300] + "..." if len(greedy_output) > 300 else greedy_output)
         
         # MCMC sampling
         print("\n[MCMC SAMPLING]")
-        mcmc_output = mcmc_sampling(llm, prompt, max_tokens=40, temperature=0.8, mcmc_steps=5)
-        print(mcmc_output)
+        mcmc_output = mcmc_sampling(client, prompt, max_tokens=512, temperature=0.8, mcmc_steps=3)
+        print(mcmc_output[:300] + "..." if len(mcmc_output) > 300 else mcmc_output)
         
-        # Show difference
+        # Show if outputs differ
         print(f"\n[COMPARISON]")
-        print(f"Same output: {greedy_output == mcmc_output}")
+        if greedy_output == mcmc_output:
+            print("✓ Same output")
+        else:
+            print("✗ Different outputs")
+            print(f"  Greedy length: {len(greedy_output)} chars")
+            print(f"  MCMC length: {len(mcmc_output)} chars")
 
 
 if __name__ == "__main__":
-    run_comparison()
+    run_comparison(num_problems=3)
