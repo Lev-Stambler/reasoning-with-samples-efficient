@@ -105,10 +105,19 @@ class BenchmarkMetrics:
 
 class SamplingStrategy:
     """Base class for sampling strategies."""
-    
+
     def __init__(self, name: str):
         self.name = name
-    
+
+    def _apply_chat_template(self, prompt: str, prefix: str = "") -> str:
+        """
+        Apply ChatML template for raw completions API.
+
+        Assistant tag is added ONCE at start, prefix appended directly.
+        NO closing tag - model continues from exactly where prefix ends.
+        """
+        return f"<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n{prefix}"
+
     def generate(self, client: OpenAI, prompt: str, max_tokens: int = 512) -> tuple[str, int, int]:
         """
         Generate completion using this strategy.
@@ -118,11 +127,11 @@ class SamplingStrategy:
 
 
 class GreedySampling(SamplingStrategy):
-    """Greedy decoding with temperature=0."""
-    
+    """Greedy decoding with temperature=0 using chat completions API."""
+
     def __init__(self):
         super().__init__("Greedy")
-    
+
     def generate(self, client: OpenAI, prompt: str, max_tokens: int = 512) -> tuple[str, int, int]:
         response = client.chat.completions.create(
             model=client.default_model,
@@ -177,35 +186,48 @@ class MCMCSampling(SamplingStrategy):
         self.block_size = block_size
         self.debug = debug
 
-    def _extract_logprobs_with_tokens(self, response) -> tuple[list[str], list[float], list[float]]:
+    def _extract_logprobs_completion(self, response) -> tuple[list[str], list[float], list[float]]:
         """
-        Extract tokens and logprobs from API response.
+        Extract tokens and logprobs from completions API response.
+
+        Completions API uses different structure than chat API:
+        - response.choices[0].logprobs.tokens (list of strings)
+        - response.choices[0].logprobs.token_logprobs (list of floats, first may be None)
 
         Returns:
             (tokens, log_p, log_target)
         """
-        if not response.choices[0].logprobs or not response.choices[0].logprobs.content:
+        choice = response.choices[0]
+        if not choice.logprobs:
             return [], [], []
 
-        tokens = [token.token for token in response.choices[0].logprobs.content]
-        log_p = [token.logprob for token in response.choices[0].logprobs.content]
+        tokens = choice.logprobs.tokens
+        log_p_raw = choice.logprobs.token_logprobs
+
+        # Filter out None values (first token often has None logprob)
+        valid = [(t, lp) for t, lp in zip(tokens, log_p_raw) if lp is not None]
+        if not valid:
+            return [], [], []
+
+        tokens, log_p = zip(*valid)
+        tokens, log_p = list(tokens), list(log_p)
         log_target = [self.alpha * lp for lp in log_p]
 
         return tokens, log_p, log_target
 
     def _sample_full(self, client: OpenAI, prompt: str, max_tokens: int):
-        """Generate a full sample from base model."""
-        response = client.chat.completions.create(
+        """Generate a full sample from base model using completions API."""
+        full_prompt = self._apply_chat_template(prompt)  # No prefix for initial
+        response = client.completions.create(
             model=client.default_model,
-            messages=[{"role": "user", "content": prompt}],
+            prompt=full_prompt,
             temperature=self.proposal_temperature,
             max_tokens=max_tokens,
-            logprobs=True,
-            top_logprobs=self.top_logprobs,
+            logprobs=self.top_logprobs,
         )
 
-        text = response.choices[0].message.content
-        tokens, log_p, log_target = self._extract_logprobs_with_tokens(response)
+        text = response.choices[0].text
+        tokens, log_p, log_target = self._extract_logprobs_completion(response)
         # Track if completion ended naturally (EOS) vs hitting max_tokens
         finished_naturally = response.choices[0].finish_reason == "stop"
 
@@ -218,24 +240,22 @@ class MCMCSampling(SamplingStrategy):
 
     def _sample_continuation(self, client: OpenAI, prompt: str, prefix: str, max_tokens: int):
         """
-        Generate a continuation from a prefix using partial regeneration.
+        Generate a TRUE continuation from a prefix using completions API.
 
-        Sends the prefix as an assistant message and lets the model continue.
+        Uses raw completions API with chat template - NO new assistant turn,
+        just continues from exactly where the prefix ends.
         """
-        response = client.chat.completions.create(
+        full_prompt = self._apply_chat_template(prompt, prefix)  # Prefix appended, NO new turn
+        response = client.completions.create(
             model=client.default_model,
-            messages=[
-                {"role": "user", "content": prompt},
-                {"role": "assistant", "content": prefix}  # Continue from here
-            ],
+            prompt=full_prompt,
             temperature=self.proposal_temperature,
             max_tokens=max_tokens,
-            logprobs=True,
-            top_logprobs=self.top_logprobs,
+            logprobs=self.top_logprobs,
         )
 
-        continuation = response.choices[0].message.content
-        tokens, log_p, log_target = self._extract_logprobs_with_tokens(response)
+        continuation = response.choices[0].text  # TRUE continuation
+        tokens, log_p, log_target = self._extract_logprobs_completion(response)
         finished_naturally = response.choices[0].finish_reason == "stop"
 
         return (
@@ -440,29 +460,24 @@ class ParallelMCMCSampling(SamplingStrategy):
         self.model = model
         self.supports_n_param = supports_n_param
 
-    def _extract_logprobs(self, response_obj: Any) -> Tuple[List[str], List[float]]:
+    def _extract_logprobs_completion(self, choice: Any) -> Tuple[List[str], List[float]]:
         """
-        Parses standard OpenAI response object.
-        Note: This assumes the input is the actual API response object.
+        Extract tokens and logprobs from completions API choice.
         """
         try:
-            # Handle standard OpenAI object structure
-            choice = response_obj.choices[0]
-            content = choice.message.content
-            
-            # If logprobs are None (some providers don't return them), handle gracefully
-            if not choice.logprobs or not choice.logprobs.content:
-                # Fallback or error - simplistic handling here
+            if not choice.logprobs:
                 return [], []
 
-            tokens = []
-            log_ps = []
-            
-            for token_data in choice.logprobs.content:
-                tokens.append(token_data.token)
-                log_ps.append(token_data.logprob)
-                
-            return tokens, log_ps
+            tokens = choice.logprobs.tokens
+            log_p_raw = choice.logprobs.token_logprobs
+
+            # Filter out None values (first token often has None logprob)
+            valid = [(t, lp) for t, lp in zip(tokens, log_p_raw) if lp is not None]
+            if not valid:
+                return [], []
+
+            tokens, log_ps = zip(*valid)
+            return list(tokens), list(log_ps)
         except Exception as e:
             if self.debug:
                 print(f"Error extracting logprobs: {e}")
@@ -471,34 +486,36 @@ class ParallelMCMCSampling(SamplingStrategy):
     async def _call_api(
         self,
         client: Any,
-        messages: List[Dict[str, str]],
+        prompt: str,
+        prefix: str,
         max_tokens: int
     ) -> Any:
-        """Standard wrapper for API call."""
-        return await client.chat.completions.create(
+        """API call using completions API for TRUE continuation."""
+        full_prompt = self._apply_chat_template(prompt, prefix)
+        return await client.completions.create(
             model=self.model,
-            messages=messages,
+            prompt=full_prompt,
             temperature=self.proposal_temperature,
             max_tokens=max_tokens,
-            logprobs=True,
-            top_logprobs=self.top_logprobs
+            logprobs=self.top_logprobs,
         )
 
     async def _call_api_multiple(
         self,
         client: Any,
-        messages: List[Dict[str, str]],
+        prompt: str,
+        prefix: str,
         max_tokens: int,
         n: int
     ) -> Any:
-        """API call with n parameter for multiple completions (for vLLM/APIs that support it)."""
-        return await client.chat.completions.create(
+        """API call with n parameter for multiple completions using completions API."""
+        full_prompt = self._apply_chat_template(prompt, prefix)
+        return await client.completions.create(
             model=self.model,
-            messages=messages,
+            prompt=full_prompt,
             temperature=self.proposal_temperature,
             max_tokens=max_tokens,
-            logprobs=True,
-            top_logprobs=self.top_logprobs,
+            logprobs=self.top_logprobs,
             n=n
         )
 
@@ -515,12 +532,9 @@ class ParallelMCMCSampling(SamplingStrategy):
 
         When supports_n_param=True (vLLM): Use single call with n parameter for efficient GPU batching.
         When supports_n_param=False (Ollama): Make separate parallel API calls.
-        """
-        messages = [
-            {"role": "user", "content": prompt},
-            {"role": "assistant", "content": prefix}
-        ]
 
+        Uses completions API for TRUE continuation.
+        """
         proposals = [current_proposal]
         total_pt = 0
         total_ct = 0
@@ -528,10 +542,10 @@ class ParallelMCMCSampling(SamplingStrategy):
         if self.supports_n_param:
             # vLLM path: Use n parameter for efficient batched inference
             try:
-                resp = await self._call_api_multiple(client, messages, target_len, self.num_proposals - 1)
+                resp = await self._call_api_multiple(client, prompt, prefix, target_len, self.num_proposals - 1)
 
                 for choice in resp.choices:
-                    tokens, log_p = self._extract_logprobs_from_choice(choice)
+                    tokens, log_p = self._extract_logprobs_completion(choice)
                     if not tokens:
                         continue
 
@@ -554,7 +568,7 @@ class ParallelMCMCSampling(SamplingStrategy):
             # Ollama path: Make N-1 separate parallel API calls
             tasks = []
             for _ in range(self.num_proposals - 1):
-                tasks.append(self._call_api(client, messages, target_len))
+                tasks.append(self._call_api(client, prompt, prefix, target_len))
 
             responses = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -564,7 +578,7 @@ class ParallelMCMCSampling(SamplingStrategy):
                         print(f"API Error: {resp}")
                     continue
 
-                tokens, log_p = self._extract_logprobs(resp)
+                tokens, log_p = self._extract_logprobs_completion(resp.choices[0])
                 if not tokens:
                     continue
 
@@ -580,25 +594,6 @@ class ParallelMCMCSampling(SamplingStrategy):
                 total_ct += resp.usage.completion_tokens
 
         return proposals, total_pt, total_ct
-
-    def _extract_logprobs_from_choice(self, choice: Any) -> Tuple[List[str], List[float]]:
-        """Extract logprobs from a single choice object."""
-        try:
-            if not choice.logprobs or not choice.logprobs.content:
-                return [], []
-
-            tokens = []
-            log_ps = []
-
-            for token_data in choice.logprobs.content:
-                tokens.append(token_data.token)
-                log_ps.append(token_data.logprob)
-
-            return tokens, log_ps
-        except Exception as e:
-            if self.debug:
-                print(f"Error extracting logprobs from choice: {e}")
-            return [], []
 
     def _compute_transition_matrix(self, proposals: List[Proposal]) -> np.ndarray:
         """
@@ -670,6 +665,8 @@ class ParallelMCMCSampling(SamplingStrategy):
         2. After each block, run MCMC refinement steps with N parallel proposals
         3. MCMC uses block-aligned index selection
         4. Uses Calderhead transition matrix for proposal selection
+
+        Uses completions API for TRUE continuation.
         """
         tokens_cur: List[str] = []
         log_p_cur: List[float] = []
@@ -688,14 +685,11 @@ class ParallelMCMCSampling(SamplingStrategy):
 
         # Generate block by block
         for block_num in range(num_blocks_to_generate):
-            # Generate next block
+            # Generate next block - use prefix for TRUE continuation
             prefix = "".join(tokens_cur) if tokens_cur else ""
-            messages = [{"role": "user", "content": prompt}]
-            if prefix:
-                messages.append({"role": "assistant", "content": prefix})
 
-            block_resp = await self._call_api(client, messages, self.block_size)
-            block_tokens, block_log_p = self._extract_logprobs(block_resp)
+            block_resp = await self._call_api(client, prompt, prefix, self.block_size)
+            block_tokens, block_log_p = self._extract_logprobs_completion(block_resp.choices[0])
             total_prompt_tokens += block_resp.usage.prompt_tokens
             total_completion_tokens += block_resp.usage.completion_tokens
 
@@ -783,446 +777,6 @@ class ParallelMCMCSampling(SamplingStrategy):
             self.base_url = str(client.base_url)
         return asyncio.run(self._run_with_async_client(prompt, max_tokens))
 
-class __ParallelMCMCSampling(SamplingStrategy):
-    """
-    Multiple Proposals MCMC with parallel suffix generation.
-
-    Implements the generalized Metropolis-Hastings algorithm from:
-    "A general construction for parallelizing Metropolis-Hastings algorithms" (Calderhead 2014, PNAS)
-
-    For each MCMC step:
-    1. Generate N-1 new proposals in parallel + keep current state
-    2. Compute pairwise acceptance ratios R(i,j) = π(x_j)/π(x_i)
-    3. Construct transition matrix A(i,j) = (1/N) * min(1, R(i,j))
-    4. Sample next state from row of transition matrix
-
-    Target distribution: π(x) = p(x)^α (power sampling)
-    """
-
-    def __init__(
-        self,
-        alpha: float = 1.67,
-        mcmc_steps: int = 5,
-        top_logprobs: int = 5,
-        proposal_temperature: float = 0.59,
-        block_size: int = 192,
-        debug: bool = False,
-        # Parallel-specific params:
-        num_proposals: int = 4,
-        max_concurrent: int = 100,
-        timeout: float = 60.0,
-        max_retries: int = 3,
-        length_normalize: bool = False,
-        # API config (set by generate() from client):
-        api_key: Optional[str] = None,
-        base_url: str = "https://api.x.ai/v1",
-        model: str = "grok-4-1-fast-non-reasoning",
-    ):
-        name = f"ParallelMCMC(α={alpha},steps={mcmc_steps},B={block_size},N={num_proposals})"
-        super().__init__(name)
-        self.alpha = alpha
-        self.mcmc_steps = mcmc_steps
-        self.top_logprobs = top_logprobs
-        self.proposal_temperature = proposal_temperature
-        self.block_size = block_size
-        self.debug = debug
-        self.num_proposals = num_proposals
-        self.max_concurrent = max_concurrent
-        self.timeout = timeout
-        self.max_retries = max_retries
-        self.length_normalize = length_normalize
-        self.api_key = api_key
-        self.base_url = base_url
-        self.model = model
-
-    def _extract_logprobs_from_response(self, response: ChatCompletionResponse) -> Tuple[List[str], List[float], List[float]]:
-        """Extract tokens and logprobs from async API response."""
-        tokens = response.tokens
-        log_p = response.log_probs
-        log_target = [self.alpha * lp for lp in log_p]
-        return tokens, log_p, log_target
-
-    async def _sample_full_async(
-        self,
-        client: AsyncOpenAIClient,
-        prompt: str,
-        max_tokens: int,
-    ) -> Tuple[str, List[str], List[float], List[float], int, int, bool]:
-        """Generate a full sample from base model (async)."""
-        response = await client.chat_completion(
-            messages=[{"role": "user", "content": prompt}],
-            temperature=self.proposal_temperature,
-            max_tokens=max_tokens,
-            logprobs=True,
-            top_logprobs=self.top_logprobs,
-        )
-        tokens, log_p, log_target = self._extract_logprobs_from_response(response)
-        finished_naturally = response.finish_reason == "stop"
-        return (
-            response.text, tokens, log_p, log_target,
-            response.prompt_tokens, response.completion_tokens,
-            finished_naturally
-        )
-
-    async def _sample_continuation_async(
-        self,
-        client: AsyncOpenAIClient,
-        prompt: str,
-        prefix: str,
-        max_tokens: int,
-    ) -> Tuple[str, List[str], List[float], List[float], int, int, bool]:
-        """Generate continuation from prefix (async)."""
-        response = await client.chat_completion(
-            messages=[
-                {"role": "user", "content": prompt},
-                {"role": "assistant", "content": prefix},
-            ],
-            temperature=self.proposal_temperature,
-            max_tokens=max_tokens,
-            logprobs=True,
-            top_logprobs=self.top_logprobs,
-        )
-        tokens, log_p, log_target = self._extract_logprobs_from_response(response)
-        finished_naturally = response.finish_reason == "stop"
-        return (
-            response.text, tokens, log_p, log_target,
-            response.prompt_tokens, response.completion_tokens,
-            finished_naturally
-        )
-
-    async def _generate_parallel_proposals(
-        self,
-        client: AsyncOpenAIClient,
-        prompt: str,
-        prefix: str,
-        target_len: int,
-        current_proposal: Proposal,
-    ) -> Tuple[List[Proposal], int, int]:
-        """
-        Generate N-1 new proposals in parallel + include current state.
-
-        Returns:
-            (proposals, total_prompt_tokens, total_completion_tokens)
-            proposals[0] is always the current state
-        """
-        # Create N-1 async requests
-        requests = []
-        for _ in range(self.num_proposals - 1):
-            requests.append({
-                "messages": [
-                    {"role": "user", "content": prompt},
-                    {"role": "assistant", "content": prefix},
-                ],
-                "temperature": self.proposal_temperature,
-                "max_tokens": target_len,
-                "logprobs": True,
-                "top_logprobs": self.top_logprobs,
-            })
-
-        # Execute in parallel
-        responses = await client.chat_completion_batch(requests, max_concurrent=self.max_concurrent)
-
-        # Parse responses into Proposals
-        proposals = [current_proposal]  # Index 0 is current state
-        total_pt = 0
-        total_ct = 0
-
-        for response in responses:
-            tokens, log_p, log_target = self._extract_logprobs_from_response(response)
-            proposals.append(Proposal(
-                tokens=tokens,
-                log_p=log_p,
-                log_target=log_target,
-                prompt_tokens=response.prompt_tokens,
-                completion_tokens=response.completion_tokens,
-            ))
-            total_pt += response.prompt_tokens
-            total_ct += response.completion_tokens
-
-        return proposals, total_pt, total_ct
-
-    async def _generate_parallel_proposals_full(
-        self,
-        client: AsyncOpenAIClient,
-        prompt: str,
-        target_len: int,
-        current_proposal: Proposal,
-    ) -> Tuple[List[Proposal], int, int]:
-        """
-        Generate N-1 new full proposals in parallel (no prefix) + include current state.
-
-        Used when regenerating from the beginning (idx=0).
-        """
-        # Create N-1 async requests for full generation
-        requests = []
-        for _ in range(self.num_proposals - 1):
-            requests.append({
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": self.proposal_temperature,
-                "max_tokens": target_len,
-                "logprobs": True,
-                "top_logprobs": self.top_logprobs,
-            })
-
-        # Execute in parallel
-        responses = await client.chat_completion_batch(requests, max_concurrent=self.max_concurrent)
-
-        # Parse responses into Proposals
-        proposals = [current_proposal]  # Index 0 is current state
-        total_pt = 0
-        total_ct = 0
-
-        for response in responses:
-            tokens, log_p, log_target = self._extract_logprobs_from_response(response)
-            proposals.append(Proposal(
-                tokens=tokens,
-                log_p=log_p,
-                log_target=log_target,
-                prompt_tokens=response.prompt_tokens,
-                completion_tokens=response.completion_tokens,
-            ))
-            total_pt += response.prompt_tokens
-            total_ct += response.completion_tokens
-
-        return proposals, total_pt, total_ct
-
-    def _compute_transition_matrix(self, proposals: List[Proposal]) -> np.ndarray:
-        """
-        Compute transition matrix A(i,j) for multiple proposals.
-
-        A(i,j) = (1/N) * min(1, R(i,j))  for j ≠ i
-        A(i,i) = 1 - Σ_{j≠i} A(i,j)
-
-        For power sampling with symmetric proposal:
-        R(i,j) = π(x_j)/π(x_i) = exp(α * (sum(log_p_j) - sum(log_p_i)))
-
-        Note: We use log_target which already has α applied, so:
-        log R(i,j) = sum(log_target_j) - sum(log_target_i)
-
-        If length_normalize=True, we normalize by length to remove length penalty:
-        log R(i,j) = mean(log_target_j) - mean(log_target_i)
-        """
-        N = len(proposals)
-        A = np.zeros((N, N))
-
-        # Compute log target sums (or means if length_normalize) for each proposal
-        if self.length_normalize:
-            log_target_sums = np.array([
-                sum(p.log_target) / len(p.log_target) if p.log_target else 0.0
-                for p in proposals
-            ])
-        else:
-            log_target_sums = np.array([sum(p.log_target) for p in proposals])
-
-        for i in range(N):
-            for j in range(N):
-                if i != j:
-                    # log R(i,j) = log_target_j - log_target_i
-                    log_R = log_target_sums[j] - log_target_sums[i]
-                    # Clamp for numerical stability (avoid overflow)
-                    log_R = np.clip(log_R, -700, 700)
-                    # A(i,j) = (1/N) * min(1, exp(log_R))
-                    A[i, j] = (1.0 / N) * min(1.0, np.exp(log_R))
-
-            # A(i,i) = 1 - sum of other transitions
-            A[i, i] = 1.0 - np.sum(A[i, :])
-
-        # Ensure non-negative (numerical precision)
-        A = np.maximum(A, 0.0)
-
-        return A
-
-    def _sample_next_state(self, transition_matrix: np.ndarray, current_idx: int) -> int:
-        """
-        Sample next state from transition matrix row.
-
-        Args:
-            transition_matrix: N x N transition matrix
-            current_idx: Index of current state
-
-        Returns:
-            Index of next state
-        """
-        probs = transition_matrix[current_idx, :]
-        # Ensure probabilities sum to 1 (handle numerical errors)
-        probs = probs / probs.sum()
-        return np.random.choice(len(probs), p=probs)
-
-    async def _generate_async(
-        self,
-        api_key: str,
-        base_url: str,
-        model: str,
-        prompt: str,
-        max_tokens: int,
-    ) -> Tuple[str, int, int]:
-        """
-        Async implementation of block-wise generation with parallel MCMC.
-        """
-        total_prompt_tokens = 0
-        total_completion_tokens = 0
-        attempts = 0
-        acceptances = 0
-
-        async with AsyncOpenAIClient(
-            api_key=api_key,
-            base_url=base_url,
-            model=model,
-            timeout=self.timeout,
-            max_retries=self.max_retries,
-        ) as client:
-            # Initialize with empty generation
-            tokens_cur: List[str] = []
-            log_p_cur: List[float] = []
-            log_target_cur: List[float] = []
-
-            # Calculate number of blocks to generate
-            num_blocks_to_generate = max_tokens // self.block_size
-            if num_blocks_to_generate < 1:
-                num_blocks_to_generate = 1
-
-            if self.debug:
-                print(f"[ParallelMCMC] Block-wise generation: {num_blocks_to_generate} blocks of {self.block_size} tokens, N={self.num_proposals}")
-
-            # Generate block by block
-            for block_num in range(num_blocks_to_generate):
-                prefix = "".join(tokens_cur) if tokens_cur else ""
-
-                if block_num == 0:
-                    # First block: use _sample_full_async
-                    _, block_tokens, block_log_p, block_log_target, pt, ct, _ = await self._sample_full_async(
-                        client, prompt, self.block_size
-                    )
-                else:
-                    # Subsequent blocks: continue from prefix
-                    _, block_tokens, block_log_p, block_log_target, pt, ct, _ = await self._sample_continuation_async(
-                        client, prompt, prefix, self.block_size
-                    )
-
-                total_prompt_tokens += pt
-                total_completion_tokens += ct
-
-                # Extend current state with new block
-                tokens_cur.extend(block_tokens)
-                log_p_cur.extend(block_log_p)
-                log_target_cur.extend(block_log_target)
-
-                if self.debug:
-                    print(f"[ParallelMCMC] Block {block_num+1}/{num_blocks_to_generate}: generated {len(block_tokens)} tokens, total={len(tokens_cur)}")
-
-                # Run MCMC refinement steps with parallel proposals
-                for step in range(self.mcmc_steps):
-                    num_complete_blocks = len(tokens_cur) // self.block_size
-
-                    # Need at least 1 complete block to do MCMC
-                    # (model may finish early with fewer tokens than block_size)
-                    if num_complete_blocks < 1:
-                        if self.debug:
-                            print(f"[ParallelMCMC]   Step {step+1}: Skipping MCMC, {len(tokens_cur)} tokens < block_size {self.block_size}")
-                        break  # No point continuing MCMC steps for this block
-
-                    attempts += 1
-
-                    # Pick random block boundary (can regenerate from beginning with min_block=0)
-                    min_block = 0
-                    block_idx = random.randint(min_block, num_complete_blocks - 1)
-                    idx = block_idx * self.block_size
-
-                    # Prefix to keep
-                    prefix = "".join(tokens_cur[:idx])
-                    # Target length includes an extra block for exploration
-                    target_len = len(tokens_cur) - idx #+ self.block_size
-
-                    # Current suffix as Proposal (will be sliced to match proposal length later)
-                    current_proposal = Proposal(
-                        tokens=tokens_cur[idx:],
-                        log_p=log_p_cur[idx:],
-                        log_target=log_target_cur[idx:],
-                        prompt_tokens=0,
-                        completion_tokens=0,
-                    )
-
-                    # Generate N-1 new proposals in parallel
-                    # If idx=0 (regenerating from beginning), use full generation instead of continuation
-                    if idx == 0:
-                        proposals, pt, ct = await self._generate_parallel_proposals_full(
-                            client, prompt, target_len, current_proposal
-                        )
-                    else:
-                        proposals, pt, ct = await self._generate_parallel_proposals(
-                            client, prompt, prefix, target_len, current_proposal
-                        )
-                    total_prompt_tokens += pt
-                    total_completion_tokens += ct
-
-                    # For fair comparison, slice current suffix to match minimum proposal length
-                    # (handles variable-length proposals)
-                    min_len = min(len(p.tokens) for p in proposals)
-                    for i, p in enumerate(proposals):
-                        if len(p.tokens) > min_len:
-                            proposals[i] = Proposal(
-                                tokens=p.tokens[:min_len],
-                                log_p=p.log_p[:min_len],
-                                log_target=p.log_target[:min_len],
-                                prompt_tokens=p.prompt_tokens,
-                                completion_tokens=p.completion_tokens,
-                            )
-
-                    # Compute transition matrix
-                    A = self._compute_transition_matrix(proposals)
-
-                    # Sample next state (current is at index 0)
-                    next_idx = self._sample_next_state(A, current_idx=0)
-                    accepted = (next_idx != 0)
-
-                    if self.debug:
-                        log_targets = [sum(p.log_target) for p in proposals]
-                        status = f"ACCEPT({next_idx})" if accepted else "STAY"
-                        print(f"[ParallelMCMC]   Step {step+1}: block_idx={block_idx}, log_targets={[f'{lt:.1f}' for lt in log_targets]}, {status}")
-
-                    if accepted:
-                        acceptances += 1
-                        selected = proposals[next_idx]
-                        tokens_cur = tokens_cur[:idx] + selected.tokens
-                        log_p_cur = log_p_cur[:idx] + selected.log_p
-                        log_target_cur = log_target_cur[:idx] + selected.log_target
-
-        # Reconstruct text from final tokens
-        current_text = "".join(tokens_cur)
-
-        # Store acceptance ratio
-        self._last_acceptance_ratio = acceptances / attempts if attempts > 0 else 0.0
-
-        if self.debug:
-            print(f"[ParallelMCMC] Final: {len(tokens_cur)} tokens, acceptance={self._last_acceptance_ratio:.1%}")
-
-        return current_text, total_prompt_tokens, total_completion_tokens
-
-    def generate(self, client: OpenAI, prompt: str, max_tokens: int = 512) -> Tuple[str, int, int]:
-        """
-        Generate completion using parallel MCMC with multiple proposals.
-
-        Uses asyncio.run() to bridge sync/async.
-        """
-        # Extract API config from sync client
-        api_key = self.api_key or client.api_key
-        base_url = self.base_url or str(client.base_url).rstrip('/')
-        model = self.model or getattr(client, 'default_model', 'grok-4-1-fast-non-reasoning')
-
-        # Run async generation
-        return asyncio.run(self._generate_async(
-            api_key=api_key,
-            base_url=base_url,
-            model=model,
-            prompt=prompt,
-            max_tokens=max_tokens,
-        ))
-
-    def get_acceptance_ratio(self) -> float:
-        """Return the acceptance ratio from the last generate() call."""
-        return getattr(self, '_last_acceptance_ratio', 0.0)
-
-
 @dataclass
 class Beam:
     """Represents a single hypothesis in beam search."""
@@ -1299,30 +853,38 @@ class BeamSearchSampling(SamplingStrategy):
         self.max_concurrent = max_concurrent
         self.timeout = timeout
 
-    def _extract_logprobs_with_tokens(self, response) -> tuple[list[str], list[float], list[float]]:
-        """Extract tokens and logprobs from API response."""
-        if not response.choices[0].logprobs or not response.choices[0].logprobs.content:
+    def _extract_logprobs_completion(self, choice) -> tuple[list[str], list[float], list[float]]:
+        """Extract tokens and logprobs from completions API choice."""
+        if not choice.logprobs:
             return [], [], []
 
-        tokens = [token.token for token in response.choices[0].logprobs.content]
-        log_p = [token.logprob for token in response.choices[0].logprobs.content]
+        tokens = choice.logprobs.tokens
+        log_p_raw = choice.logprobs.token_logprobs
+
+        # Filter out None values (first token often has None logprob)
+        valid = [(t, lp) for t, lp in zip(tokens, log_p_raw) if lp is not None]
+        if not valid:
+            return [], [], []
+
+        tokens, log_p = zip(*valid)
+        tokens, log_p = list(tokens), list(log_p)
         log_target = [self.alpha * lp for lp in log_p]
 
         return tokens, log_p, log_target
 
     def _sample_full(self, client: OpenAI, prompt: str, max_tokens: int):
-        """Generate a full sample from base model."""
-        response = client.chat.completions.create(
+        """Generate a full sample from base model using completions API."""
+        full_prompt = self._apply_chat_template(prompt)
+        response = client.completions.create(
             model=client.default_model,
-            messages=[{"role": "user", "content": prompt}],
+            prompt=full_prompt,
             temperature=self.proposal_temperature,
             max_tokens=max_tokens,
-            logprobs=True,
-            top_logprobs=self.top_logprobs,
+            logprobs=self.top_logprobs,
         )
 
-        text = response.choices[0].message.content
-        tokens, log_p, log_target = self._extract_logprobs_with_tokens(response)
+        text = response.choices[0].text
+        tokens, log_p, log_target = self._extract_logprobs_completion(response.choices[0])
         finished_naturally = response.choices[0].finish_reason == "stop"
 
         return (
@@ -1333,21 +895,18 @@ class BeamSearchSampling(SamplingStrategy):
         )
 
     def _sample_continuation(self, client: OpenAI, prompt: str, prefix: str, max_tokens: int):
-        """Generate a single continuation from a prefix."""
-        response = client.chat.completions.create(
+        """Generate a TRUE continuation from a prefix using completions API."""
+        full_prompt = self._apply_chat_template(prompt, prefix)
+        response = client.completions.create(
             model=client.default_model,
-            messages=[
-                {"role": "user", "content": prompt},
-                {"role": "assistant", "content": prefix}
-            ],
+            prompt=full_prompt,
             temperature=self.proposal_temperature,
             max_tokens=max_tokens,
-            logprobs=True,
-            top_logprobs=self.top_logprobs,
+            logprobs=self.top_logprobs,
         )
 
-        continuation = response.choices[0].message.content
-        tokens, log_p, log_target = self._extract_logprobs_with_tokens(response)
+        continuation = response.choices[0].text
+        tokens, log_p, log_target = self._extract_logprobs_completion(response.choices[0])
         finished_naturally = response.choices[0].finish_reason == "stop"
 
         return (
@@ -1358,68 +917,42 @@ class BeamSearchSampling(SamplingStrategy):
         )
 
     def _sample_continuation_multiple(self, client: OpenAI, prompt: str, prefix: str, max_tokens: int, n: int):
-        """Generate n continuations from a prefix for true beam search expansion."""
-        response = client.chat.completions.create(
+        """Generate n TRUE continuations from a prefix using completions API with n parameter."""
+        full_prompt = self._apply_chat_template(prompt, prefix)
+        response = client.completions.create(
             model=client.default_model,
-            messages=[
-                {"role": "user", "content": prompt},
-                {"role": "assistant", "content": prefix}
-            ],
+            prompt=full_prompt,
             temperature=self.proposal_temperature,
             max_tokens=max_tokens,
-            logprobs=True,
-            top_logprobs=self.top_logprobs,
+            logprobs=self.top_logprobs,
             n=n,  # Generate n different samples
         )
 
         # Extract all n continuations
         results = []
         for choice in response.choices:
-            continuation = choice.message.content
-
-            # Extract logprobs for this choice
-            if choice.logprobs and choice.logprobs.content:
-                tokens = [t.token for t in choice.logprobs.content]
-                log_p = [t.logprob for t in choice.logprobs.content]
-                log_target = [self.alpha * lp for lp in log_p]
-            else:
-                tokens = []
-                log_p = []
-                log_target = []
-
+            continuation = choice.text
+            tokens, log_p, log_target = self._extract_logprobs_completion(choice)
             finished_naturally = choice.finish_reason == "stop"
-
             results.append((continuation, tokens, log_p, log_target, finished_naturally))
 
         # Token usage is for ALL n samples combined
         return results, response.usage.prompt_tokens, response.usage.completion_tokens
 
     async def _sample_single_continuation_async(self, client: AsyncOpenAI, prompt: str, prefix: str, max_tokens: int):
-        """Async: Generate a single continuation from a prefix."""
-        response = await client.chat.completions.create(
+        """Async: Generate a TRUE continuation from a prefix using completions API."""
+        full_prompt = self._apply_chat_template(prompt, prefix)
+        response = await client.completions.create(
             model=client.default_model,
-            messages=[
-                {"role": "user", "content": prompt},
-                {"role": "assistant", "content": prefix}
-            ] if prefix else [{"role": "user", "content": prompt}],
+            prompt=full_prompt,
             temperature=self.proposal_temperature,
             max_tokens=max_tokens,
-            logprobs=True,
-            top_logprobs=self.top_logprobs,
+            logprobs=self.top_logprobs,
         )
 
         choice = response.choices[0]
-        continuation = choice.message.content
-
-        if choice.logprobs and choice.logprobs.content:
-            tokens = [t.token for t in choice.logprobs.content]
-            log_p = [t.logprob for t in choice.logprobs.content]
-            log_target = [self.alpha * lp for lp in log_p]
-        else:
-            tokens = []
-            log_p = []
-            log_target = []
-
+        continuation = choice.text
+        tokens, log_p, log_target = self._extract_logprobs_completion(choice)
         finished_naturally = choice.finish_reason == "stop"
 
         return (
@@ -1428,33 +961,21 @@ class BeamSearchSampling(SamplingStrategy):
         )
 
     async def _sample_multiple_continuations_async(self, client: AsyncOpenAI, prompt: str, prefix: str, max_tokens: int, n: int):
-        """Async: Generate n continuations from a prefix using the n parameter (for vLLM/APIs that support it)."""
-        response = await client.chat.completions.create(
+        """Async: Generate n TRUE continuations using completions API with n parameter."""
+        full_prompt = self._apply_chat_template(prompt, prefix)
+        response = await client.completions.create(
             model=client.default_model,
-            messages=[
-                {"role": "user", "content": prompt},
-                {"role": "assistant", "content": prefix}
-            ] if prefix else [{"role": "user", "content": prompt}],
+            prompt=full_prompt,
             temperature=self.proposal_temperature,
             max_tokens=max_tokens,
-            logprobs=True,
-            top_logprobs=self.top_logprobs,
+            logprobs=self.top_logprobs,
             n=n,
         )
 
         results = []
         for choice in response.choices:
-            continuation = choice.message.content
-
-            if choice.logprobs and choice.logprobs.content:
-                tokens = [t.token for t in choice.logprobs.content]
-                log_p = [t.logprob for t in choice.logprobs.content]
-                log_target = [self.alpha * lp for lp in log_p]
-            else:
-                tokens = []
-                log_p = []
-                log_target = []
-
+            continuation = choice.text
+            tokens, log_p, log_target = self._extract_logprobs_completion(choice)
             finished_naturally = choice.finish_reason == "stop"
             results.append((continuation, tokens, log_p, log_target, finished_naturally))
 
@@ -1711,21 +1232,22 @@ class BeamSearchSampling(SamplingStrategy):
 
 
 class TemperatureSampling(SamplingStrategy):
-    """Standard temperature sampling."""
-    
+    """Standard temperature sampling using completions API."""
+
     def __init__(self, temperature: float = 0.8):
         super().__init__(f"Temperature(T={temperature})")
         self.temperature = temperature
-    
+
     def generate(self, client: OpenAI, prompt: str, max_tokens: int = 512) -> tuple[str, int, int]:
-        response = client.chat.completions.create(
+        full_prompt = self._apply_chat_template(prompt)
+        response = client.completions.create(
             model=client.default_model,
-            messages=[{"role": "user", "content": prompt}],
+            prompt=full_prompt,
             temperature=self.temperature,
             max_tokens=max_tokens,
         )
         return (
-            response.choices[0].message.content,
+            response.choices[0].text,
             response.usage.prompt_tokens,
             response.usage.completion_tokens
         )
