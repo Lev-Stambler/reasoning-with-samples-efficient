@@ -325,7 +325,7 @@ class MCMCSampling(SamplingStrategy):
                 prefix = "".join(tokens_cur[:idx])
 
                 # Target length for proposal (same as current)
-                target_len = len(tokens_cur) - idx #+ self.block_size
+                target_len = len(tokens_cur) - idx
 
                 # Generate new suffix
                 new_suffix, tokens_prop, log_p_prop, log_target_prop, pt, ct, _ = self._sample_continuation(
@@ -334,9 +334,10 @@ class MCMCSampling(SamplingStrategy):
                 total_prompt_tokens += pt
                 total_completion_tokens += ct
 
-                # Current suffix logprobs (from idx onwards)
-                log_p_cur_suffix = log_p_cur[idx:]
-                log_target_cur_suffix = log_target_cur[idx:]
+                # Slice current suffix to match proposal length (handles variable-length proposals)
+                prop_len = len(tokens_prop)
+                log_p_cur_suffix = log_p_cur[idx:idx + prop_len]
+                log_target_cur_suffix = log_target_cur[idx:idx + prop_len]
 
                 # MH acceptance ratio for suffixes only
                 # log A = log(π(suffix')/π(suffix)) + log(q(suffix)/q(suffix'))
