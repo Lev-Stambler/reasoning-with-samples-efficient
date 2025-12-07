@@ -277,6 +277,7 @@ class MCMCSampling(SamplingStrategy):
                     client, prompt, self.block_size
                 )
             else:
+                pass
                 # Subsequent blocks: continue from prefix
                 block_text, block_tokens, block_log_p, block_log_target, pt, ct, _ = self._sample_continuation(
                     client, prompt, prefix, self.block_size
@@ -297,12 +298,6 @@ class MCMCSampling(SamplingStrategy):
             for step in range(self.mcmc_steps):
                 # Block-aligned index selection
                 num_complete_blocks = len(tokens_cur) // self.block_size
-                if num_complete_blocks < 2:
-                    # Need at least 2 blocks to do partial regeneration
-                    if self.debug:
-                        print(f"[MCMC]   Step {step+1}: Skipping, only {num_complete_blocks} complete blocks")
-                    continue
-
                 attempts += 1
 
                 # Pick random block boundary (keep at least first block)
@@ -314,6 +309,7 @@ class MCMCSampling(SamplingStrategy):
 
                 # Check if we have a valid range
                 if min_block > num_complete_blocks - 1:
+                    assert False, "This should not happen"
                     if self.debug:
                         print(f"[MCMC]   Step {step+1}: Skipping, restrict_to_last_n={self.restrict_to_last_n} too small")
                     continue
@@ -325,7 +321,7 @@ class MCMCSampling(SamplingStrategy):
                 prefix = "".join(tokens_cur[:idx])
 
                 # Target length for proposal (same as current)
-                target_len = len(tokens_cur) - idx
+                target_len = len(tokens_cur) - idx + self.block_size
 
                 # Generate new suffix
                 new_suffix, tokens_prop, log_p_prop, log_target_prop, pt, ct, _ = self._sample_continuation(
