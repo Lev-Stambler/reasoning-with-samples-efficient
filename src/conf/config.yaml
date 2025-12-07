@@ -38,8 +38,8 @@ model:
   # Start server: vllm serve Qwen/Qwen3-8B --port 8000
   # vLLM provides: real logprobs, n parameter support, true GPU batching
   vllm:
-    name: Qwen/Qwen3-8B
-    # name: HuggingFaceTB/SmolLM2-1.7B-Instruct
+    # name: Qwen/Qwen3-8B
+    name: HuggingFaceTB/SmolLM2-1.7B-Instruct
     # name: HuggingFaceTB/SmolLM2-135M-Instruct
     base_url: http://localhost:8000/v1
 
@@ -53,8 +53,8 @@ benchmark:
 # Prompt customization
 prompt:
   prefix: "" # Text to add before the benchmark prompt
-  # suffix: "\n\nThink deeply and show your work, step by step, check your answer and output 'yes' 10 times if you are correct!" # Text to add after the benchmark prompt
-  suffix: ""
+  suffix: "\n\nThink deeply and show your work, step by step, check your answer and output 'yes' 10 times if you are correct!" # Text to add after the benchmark prompt
+  # suffix: ""
 
 # MCMC sampling configuration (serial, single proposal per step)
 mcmc:
@@ -75,7 +75,7 @@ mcmc_parallel:
   steps: 2 # MCMC refinement steps per block (1 is typical with N parallel proposals)
   top_logprobs: 15 # Number of top log probabilities to retrieve
   proposal_temperature: 0.25 # Temperature for proposal distribution, should be alpha^(-1)
-  block_size: 192 # Block size B for block-wise generation (match mcmc.block_size)
+  block_size: 400 # Block size B for block-wise generation (match mcmc.block_size)
   debug: true # Print debug info
   length_normalize: false # If true, normalize log_target by length (removes length penalty)
   # Parallel-specific parameters:
