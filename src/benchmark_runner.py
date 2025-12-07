@@ -265,7 +265,14 @@ class MCMCSampling(SamplingStrategy):
                 min_idx = max(1, len(tokens_cur) - self.restrict_to_last_n)
             else:
                 min_idx = 1  # At least keep first token
-            idx = random.randint(min_idx, len(tokens_cur) - 1)
+
+            # Ensure min_idx doesn't exceed valid range
+            max_idx = len(tokens_cur) - 1
+            if min_idx > max_idx:
+                # restrict_to_last_n is too small, skip this step
+                continue
+
+            idx = random.randint(min_idx, max_idx)
 
             # Prefix to keep (as text)
             prefix = "".join(tokens_cur[:idx])
