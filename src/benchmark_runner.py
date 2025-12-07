@@ -868,6 +868,7 @@ class BeamSearchSampling(SamplingStrategy):
         tokens = [token.token for token in response.choices[0].logprobs.content]
         log_p = [token.logprob for token in response.choices[0].logprobs.content]
         log_target = [self.alpha * lp for lp in log_p]
+        print("AAA", log_p, log_target)
 
         return tokens, log_p, log_target
 
