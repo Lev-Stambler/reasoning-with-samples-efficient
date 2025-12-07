@@ -394,6 +394,7 @@ class BeamSearchSampling(SamplingStrategy):
         beam_width: int = 2,
         n_per_beam: int = 2,  # Generate n continuations per beam
         tokens_per_step: int = 192,  # Generate this many tokens per expansion
+        use_length_penalty: bool = True,  # Whether to apply length normalization
         length_penalty: float = 0.6,
         proposal_temperature: float = 1.0,
         top_logprobs: int = 5,
@@ -405,6 +406,7 @@ class BeamSearchSampling(SamplingStrategy):
         self.beam_width = beam_width
         self.n_per_beam = n_per_beam
         self.tokens_per_step = tokens_per_step
+        self.use_length_penalty = use_length_penalty
         self.length_penalty = length_penalty
         self.proposal_temperature = proposal_temperature
         self.top_logprobs = top_logprobs
@@ -587,12 +589,15 @@ class BeamSearchSampling(SamplingStrategy):
         return candidate_beams, total_pt, total_ct
     
     def _calculate_beam_score(self, log_target: list[float], length: int) -> float:
-        """Calculate length-normalized beam score."""
+        """Calculate beam score, optionally with length normalization."""
         if length == 0:
-            return 0.0
+            return float('-inf')  # Empty beams should never be selected
         cumulative_score = sum(log_target)
-        normalized_score = cumulative_score / (length ** self.length_penalty)
-        return normalized_score
+        if self.use_length_penalty:
+            normalized_score = cumulative_score / (length ** self.length_penalty)
+            return normalized_score
+        else:
+            return cumulative_score
     
     async def _generate_async(self, client: AsyncOpenAI, prompt: str, max_tokens: int = 512) -> tuple[str, int, int]:
         """
