@@ -48,3 +48,4 @@ env/
 *.safetensors
 models/
 .sync-to-remote.sh
+outputs
