@@ -387,16 +387,20 @@ class Proposal:
 
 class ParallelMCMCSampling(SamplingStrategy):
     """
-    Corrected Multiple Proposals MCMC.
+    Parallel MCMC with multiple proposals per step.
 
-    Fixes from original:
-    1. Adds Hastings correction to acceptance ratio:
-       Ratio = (sum_i P(x_i')^alpha / sum_i P(x_i)^alpha) * (P(x) / P(x'))
-             = (P(x') / P(x))^(alpha - 1) # TODO: claude, this is wrong
-    2. Removes destructive truncation. Proposals of different lengths
-       are handled by penalizing the 'missing' tokens of the shorter sequence
-       (or strictly requiring same length, though this implementation uses masking).
-    3. Uses standard asyncio.gather instead of non-existent batch method.
+    Implements the MH acceptance ratio from "Reasoning with Sampling" (Eq. 9):
+
+    A(x, x') = min{1, [p(x')^α · q(x|x')] / [p(x)^α · q(x'|x)]}
+
+    With independent proposal q(x) = p(x):
+
+    log R = α·log P(x') + log P(x) - α·log P(x) - log P(x')
+          = log_target' + log_p - log_target - log_p'
+
+    Uses Calderhead's parallel structure: generate N proposals, build transition
+    matrix, sample next state. This enables parallel generation while maintaining
+    correct MH dynamics.
     """
 
     def __init__(
@@ -619,16 +623,20 @@ class ParallelMCMCSampling(SamplingStrategy):
         ref_len = len(proposals[0].tokens)
 
         # Compute log_p and log_target for each proposal (truncated to ref_len)
+        # Track validity to avoid -1e10 cancellation bug
         log_p_list = []
         log_target_list = []
+        valid = []
         for p in proposals:
             if len(p.tokens) >= ref_len:
                 lp = sum(p.log_p[:ref_len])
                 lt = sum(p.log_target[:ref_len])  # log_target = α * log_p
+                valid.append(True)
             else:
-                # Proposal too short - assign very low score
-                lp = -1e10
-                lt = -1e10
+                # Proposal too short - mark as invalid
+                lp = 0.0  # Placeholder, won't be used
+                lt = 0.0
+                valid.append(False)
             log_p_list.append(lp)
             log_target_list.append(lt)
 
@@ -636,11 +644,15 @@ class ParallelMCMCSampling(SamplingStrategy):
         for i in range(N):
             for j in range(N):
                 if i != j:
-                    # log R(i→j) = log_target_j + log_p_i - log_target_i - log_p_j
-                    log_R = (log_target_list[j] + log_p_list[i]
-                             - log_target_list[i] - log_p_list[j])
-                    log_R = np.clip(log_R, -50, 50)
-                    A[i, j] = (1.0 / N) * min(1.0, np.exp(log_R))
+                    if not valid[j]:
+                        # Cannot transition to invalid proposal
+                        A[i, j] = 0.0
+                    else:
+                        # log R(i→j) = log_target_j + log_p_i - log_target_i - log_p_j
+                        log_R = (log_target_list[j] + log_p_list[i]
+                                 - log_target_list[i] - log_p_list[j])
+                        log_R = np.clip(log_R, -50, 50)
+                        A[i, j] = (1.0 / N) * min(1.0, np.exp(log_R))
 
             A[i, i] = 1.0 - np.sum(A[i, :])
 
