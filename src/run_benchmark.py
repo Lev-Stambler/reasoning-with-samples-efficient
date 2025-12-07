@@ -25,6 +25,7 @@ from benchmark_runner import (
     HumanEvalBenchmark,
     GreedySampling,
     MCMCSampling,
+    ParallelMCMCSampling,
     TemperatureSampling,
     BenchmarkMetrics
 )
@@ -196,6 +197,23 @@ def main(cfg: DictConfig):
             restrict_to_last_n=cfg.mcmc.restrict_to_last_n,
             block_size=cfg.mcmc.block_size,
             debug=cfg.mcmc.debug,
+        ))
+
+    if cfg.mcmc_parallel.enabled:
+        strategies.append(ParallelMCMCSampling(
+            alpha=cfg.mcmc_parallel.alpha,
+            mcmc_steps=cfg.mcmc_parallel.steps,
+            top_logprobs=cfg.mcmc_parallel.top_logprobs,
+            proposal_temperature=cfg.mcmc_parallel.proposal_temperature,
+            block_size=cfg.mcmc_parallel.block_size,
+            debug=cfg.mcmc_parallel.debug,
+            num_proposals=cfg.mcmc_parallel.num_proposals,
+            max_concurrent=cfg.mcmc_parallel.max_concurrent,
+            timeout=cfg.mcmc_parallel.timeout,
+            max_retries=cfg.mcmc_parallel.max_retries,
+            api_key=api_key,
+            base_url=cfg.model.base_url,
+            model=cfg.model.name,
         ))
 
     if cfg.temperature_sampling.enabled:

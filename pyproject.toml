@@ -32,6 +32,7 @@ dependencies = [
     "einops",
     "pylatexenc",
     "swebench",
+    "aiohttp>=3.9.0",
 ]
 
 [project.optional-dependencies]

@@ -16,17 +16,32 @@ benchmark:
   num_problems: 10
   max_tokens: 3072  # Max tokens for final completion (applied everywhere)
 
-# MCMC sampling configuration
+# MCMC sampling configuration (serial, single proposal per step)
 mcmc:
   enabled: true
   alpha: 1.67                    # Power factor for target distribution pi(x) = p(x)^alpha
-  steps: 5                     # Number of MCMC refinement steps
-  # steps: 10                     # Number of MCMC refinement steps
-  top_logprobs: 5               # Number of top log probabilities to retrieve
+  steps: 5                       # Number of MCMC refinement steps
+  top_logprobs: 5                # Number of top log probabilities to retrieve
   proposal_temperature: 0.59     # Temperature for proposal distribution, should be alpha^(-1)
-  restrict_to_last_n: null      # Only resample last N blocks (null = disabled, int = enabled)
+  restrict_to_last_n: null       # Only resample last N blocks (null = disabled, int = enabled)
   block_size: 192                # Block size B for block-wise generation (paper default)
-  debug: true                   # Print debug info during MCMC (acceptance/rejection, log_r, etc.)
+  debug: true                    # Print debug info during MCMC (acceptance/rejection, log_r, etc.)
+
+# Parallel MCMC sampling configuration (multiple proposals per step)
+# Based on: "A general construction for parallelizing Metropolis-Hastings algorithms" (Calderhead 2014, PNAS)
+mcmc_parallel:
+  enabled: false
+  alpha: 1.67                    # Power factor for target distribution pi(x) = p(x)^alpha
+  steps: 5                       # Number of MCMC refinement steps per block
+  top_logprobs: 5                # Number of top log probabilities to retrieve
+  proposal_temperature: 0.59     # Temperature for proposal distribution
+  block_size: 192                # Block size B for block-wise generation
+  debug: true                    # Print debug info
+  # Parallel-specific parameters:
+  num_proposals: 4               # N proposals per MCMC step (includes current state)
+  max_concurrent: 10             # Max concurrent API requests
+  timeout: 60.0                  # Per-request timeout (seconds)
+  max_retries: 3                 # Retry count for failed requests
 
 # Temperature sampling configuration
 temperature_sampling:
