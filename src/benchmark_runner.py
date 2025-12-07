@@ -1452,7 +1452,9 @@ class BeamSearchSampling(SamplingStrategy):
                 if block_num == 0:
                     candidate_beams.append(Beam(text, tokens, log_p, log_target, finished))
                 else:
-                    candidate_beams.append(beam.extend(text, tokens, log_p, log_target, finished))
+                    tmp_beam = beam.extend(text, tokens, log_p, log_target, finished)
+                    print(f'tmp_beam: {tmp_beam.text}')
+                    candidate_beams.append(tmp_beam)
 
         return candidate_beams, total_pt, total_ct
 
