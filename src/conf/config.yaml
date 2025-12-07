@@ -14,18 +14,17 @@ model:
 benchmark:
   name: humaneval  # Options: humaneval, swebench, swebench-verified
   num_problems: 10
-  max_tokens: 3072  # Max tokens for final completion (applied everywhere)
+  max_tokens: 128  # Max tokens for final completion (applied everywhere)
 
 # MCMC sampling configuration
 mcmc:
   enabled: true
   alpha: 1.67                    # Power factor for target distribution pi(x) = p(x)^alpha
-  steps: 5                     # Number of MCMC refinement steps
-  # steps: 10                     # Number of MCMC refinement steps
+  steps: 10                     # Number of MCMC refinement steps
   top_logprobs: 5               # Number of top log probabilities to retrieve
   proposal_temperature: 0.59     # Temperature for proposal distribution, should be alpha^(-1)
   restrict_to_last_n: null      # Only resample last N blocks (null = disabled, int = enabled)
-  block_size: 192                # Block size B for block-wise generation (paper default)
+  block_size: 32                # Block size B for block-wise generation (paper default)
   debug: true                   # Print debug info during MCMC (acceptance/rejection, log_r, etc.)
 
 # Beam search sampling configuration
