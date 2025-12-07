@@ -24,10 +24,10 @@ prompt:
 # MCMC sampling configuration
 mcmc:
   enabled: true
-  alpha: 2.0                    # Power factor for target distribution pi(x) = p(x)^alpha
+  alpha: 4.0                    # Power factor for target distribution pi(x) = p(x)^alpha
   steps: 5                      # Number of MCMC refinement steps
   top_logprobs: 5              # Number of top log probabilities to retrieve
-  proposal_temperature: 1.0    # Temperature for proposal distribution, should be alpha^(-1)
+  proposal_temperature: 0.25    # Temperature for proposal distribution, should be alpha^(-1)
   restrict_to_last_n: null      # Only resample last N blocks (null = disabled, int = enabled)
   block_size: 32                # Block size B for block-wise generation (paper default)
   debug: true                   # Print debug info during MCMC (acceptance/rejection, log_r, etc.)
