@@ -760,9 +760,9 @@ class ParallelMCMCSampling(SamplingStrategy):
         log_target_list = []
         valid = []
         for p in proposals:
-            log_p_list.append(sum(p.log_p))
-            log_target_list.append(sum(p.log_target))
-            if False:
+            # log_p_list.append(sum(p.log_p))
+            # log_target_list.append(sum(p.log_target))
+            if True:
                 if len(p.tokens) >= ref_len:
                     lp = sum(p.log_p[:ref_len])
                     lt = sum(p.log_target[:ref_len])  # log_target = α * log_p
