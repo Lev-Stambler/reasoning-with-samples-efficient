@@ -21,6 +21,24 @@ cd reasoning-with-sampling
 uv pip install -r pyproject.toml
 ```
 
+## Interactive Demo (NEW!)
+
+Try out different sampling strategies with our interactive Streamlit app:
+
+```bash
+streamlit run chat-ui/app.py
+```
+
+Features:
+- 🎯 Side-by-side comparison of Greedy, MCMC, and Beam Search (default)
+- ⚡ Parallel execution - all methods run simultaneously
+- ⚙️ Method-specific settings in each column (not in sidebar!)
+- 📊 Token usage, timing, and acceptance rate tracking
+- 📋 Table-like layout with vertically aligned stats
+- 📝 Method descriptions for each sampling strategy
+
+See [chat-ui/README.md](chat-ui/README.md) for detailed instructions.
+
 
 ## Sampling
 The llm_experiments folder contains slurm scripts to run power sampling for MATH500 (```power_samp_math.py```), whose .json is included in llm_experiments/data, as well as HumanEval (```power_samp_he.py```), GPQA Diamond (```power_samp_gpqa.py```), and AlpacaEval 2.0 (```power_samp_alpaca.py```), whose corresponding eval sets can be downloaded from their official repos. 
