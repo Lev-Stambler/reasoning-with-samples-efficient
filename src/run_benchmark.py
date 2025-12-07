@@ -26,6 +26,7 @@ from benchmark_runner import (
     GreedySampling,
     MCMCSampling,
     ParallelMCMCSampling,
+    BeamSearchSampling,
     TemperatureSampling,
     BenchmarkMetrics
 )
@@ -201,10 +202,10 @@ def main(cfg: DictConfig):
     # Setup strategies based on config
     strategies = []
 
-    if cfg.greedy.enabled:
+    if getattr(cfg.greedy, 'enabled', False):
         strategies.append(GreedySampling())
 
-    if cfg.mcmc.enabled:
+    if getattr(cfg.mcmc, 'enabled', False):
         strategies.append(MCMCSampling(
             alpha=cfg.mcmc.alpha,
             mcmc_steps=cfg.mcmc.steps,
@@ -215,7 +216,7 @@ def main(cfg: DictConfig):
             debug=cfg.mcmc.debug,
         ))
 
-    if cfg.mcmc_parallel.enabled:
+    if getattr(cfg.mcmc_parallel, 'enabled', False):
         strategies.append(ParallelMCMCSampling(
             alpha=cfg.mcmc_parallel.alpha,
             mcmc_steps=cfg.mcmc_parallel.steps,
@@ -232,7 +233,20 @@ def main(cfg: DictConfig):
             model=cfg.model.name,
         ))
 
-    if cfg.temperature_sampling.enabled:
+    if getattr(cfg.beam_search, 'enabled', False):
+        strategies.append(BeamSearchSampling(
+            alpha=cfg.beam_search.alpha,
+            beam_width=cfg.beam_search.beam_width,
+            n_per_beam=cfg.beam_search.n_per_beam,
+            tokens_per_step=cfg.beam_search.tokens_per_step,
+            use_length_penalty=cfg.beam_search.use_length_penalty,
+            length_penalty=cfg.beam_search.length_penalty,
+            proposal_temperature=cfg.beam_search.proposal_temperature,
+            top_logprobs=cfg.beam_search.top_logprobs,
+            debug=cfg.beam_search.debug,
+        ))
+
+    if getattr(cfg.temperature_sampling, 'enabled', False):
         strategies.append(TemperatureSampling(
             temperature=cfg.temperature_sampling.temperature
         ))

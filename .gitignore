@@ -50,3 +50,6 @@ models/
 .sync-to-remote.sh
 
 outputs
+./src/predictions/
+./src/outputs/
+
