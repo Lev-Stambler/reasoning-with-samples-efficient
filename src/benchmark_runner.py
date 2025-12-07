@@ -3,6 +3,7 @@ import time
 import json
 import tempfile
 import asyncio
+import httpx
 from typing import Dict, List, Callable, Any, Optional, Tuple
 from dataclasses import dataclass, asdict
 from abc import ABC, abstractmethod
@@ -641,27 +642,31 @@ class ParallelMCMCSampling(SamplingStrategy):
 
         return np.maximum(A, 0.0)
 
-    async def _generate_async(self, client: Any, prompt: str, max_tokens: int) -> str:
+    async def _generate_async(self, client: Any, prompt: str, max_tokens: int) -> Tuple[str, int, int]:
         tokens_cur: List[str] = []
         log_p_cur: List[float] = []
-        
+        total_prompt_tokens = 0
+        total_completion_tokens = 0
+
         # Initial Generation (Bootstrap)
         messages = [{"role": "user", "content": prompt}]
         initial_resp = await self._call_api(client, messages, max_tokens)
         t, lp = self._extract_logprobs(initial_resp)
         tokens_cur, log_p_cur = t, lp
-        
+        total_prompt_tokens += initial_resp.usage.prompt_tokens
+        total_completion_tokens += initial_resp.usage.completion_tokens
+
         # MCMC Refinement Steps
         for step in range(self.mcmc_steps):
             if len(tokens_cur) < 2: break
-            
+
             # 1. Select a block to refine (Pivot)
             # We keep prefix, resample suffix
             pivot_idx = random.randint(0, len(tokens_cur) - 1)
             prefix = "".join(tokens_cur[:pivot_idx])
             suffix_tokens = tokens_cur[pivot_idx:]
             suffix_log_p = log_p_cur[pivot_idx:]
-            
+
             # The length we want to generate to match current state
             target_gen_len = len(suffix_tokens) # + some exploration buffer if desired
 
@@ -673,16 +678,18 @@ class ParallelMCMCSampling(SamplingStrategy):
             )
 
             # 2. Propose
-            proposals, _, _ = await self._generate_parallel_proposals(
+            proposals, pt, ct = await self._generate_parallel_proposals(
                 client, prompt, prefix, target_gen_len, current_proposal
             )
-            
+            total_prompt_tokens += pt
+            total_completion_tokens += ct
+
             if len(proposals) < 2: continue
 
             # 3. Transition
             A = self._compute_transition_matrix(proposals)
             next_idx = np.random.choice(len(proposals), p=A[0]) # 0 is current
-            
+
             if next_idx != 0:
                 selected = proposals[next_idx]
                 # Update State
@@ -691,14 +698,14 @@ class ParallelMCMCSampling(SamplingStrategy):
                 if self.debug:
                     print(f"Step {step}: Swapped suffix at {pivot_idx}")
 
-        return "".join(tokens_cur)
+        return "".join(tokens_cur), total_prompt_tokens, total_completion_tokens
 
-    async def _run_with_async_client(self, prompt: str, max_tokens: int) -> str:
+    async def _run_with_async_client(self, prompt: str, max_tokens: int) -> Tuple[str, int, int]:
         """Helper to run async generation with proper AsyncOpenAI client."""
         async with AsyncOpenAI(api_key=self.api_key, base_url=self.base_url) as async_client:
             return await self._generate_async(async_client, prompt, max_tokens)
 
-    def generate(self, client: Any, prompt: str, max_tokens: int = 100) -> str:
+    def generate(self, client: Any, prompt: str, max_tokens: int = 512) -> Tuple[str, int, int]:
         """Sync entry point. Creates its own AsyncOpenAI client internally."""
         # Extract api_key and base_url from passed client if not already set
         if self.api_key is None:
@@ -1170,6 +1177,8 @@ class BeamSearchSampling(SamplingStrategy):
         top_logprobs: int = 5,
         debug: bool = False,
         supports_n_param: bool = True,  # Whether API supports n parameter (vLLM: yes, Ollama: no)
+        max_concurrent: int = 100,  # Max concurrent API requests
+        timeout: float = 300.0,  # Timeout in seconds (longer for local servers)
     ):
         name = f"BeamSearch(α={alpha},width={beam_width},n={n_per_beam},tps={tokens_per_step})"
         super().__init__(name)
@@ -1183,6 +1192,8 @@ class BeamSearchSampling(SamplingStrategy):
         self.top_logprobs = top_logprobs
         self.debug = debug
         self.supports_n_param = supports_n_param
+        self.max_concurrent = max_concurrent
+        self.timeout = timeout
 
     def _extract_logprobs_with_tokens(self, response) -> tuple[list[str], list[float], list[float]]:
         """Extract tokens and logprobs from API response."""
@@ -1537,7 +1548,20 @@ class BeamSearchSampling(SamplingStrategy):
 
     async def _run_with_client(self, api_key: str, base_url: str, model: str, prompt: str, max_tokens: int):
         """Helper to run async generation with proper client lifecycle."""
-        async with AsyncOpenAI(api_key=api_key, base_url=base_url) as async_client:
+        # Configure httpx client with larger connection pool and longer timeout for local servers
+        http_client = httpx.AsyncClient(
+            limits=httpx.Limits(
+                max_connections=self.max_concurrent + 10,
+                max_keepalive_connections=self.max_concurrent,
+            ),
+            timeout=httpx.Timeout(self.timeout, connect=30.0),
+        )
+        async with AsyncOpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            timeout=self.timeout,
+            http_client=http_client,
+        ) as async_client:
             async_client.default_model = model
             return await self._generate_async(async_client, prompt, max_tokens)
 

@@ -44,7 +44,72 @@ python src/run_benchmark.py -m benchmark.name=humaneval,swebench
 python src/run_benchmark.py -m mcmc.alpha=1.0,1.67,4.0
 ```
 
-### 3. View Results
+### 3. Model Providers
+
+The benchmark supports three providers: X.AI (cloud), Ollama (local), and vLLM (local with GPU batching).
+
+#### X.AI (Default)
+```bash
+# Set API key
+echo "XAI_API_KEY=your-api-key" > .env
+
+# Run benchmark
+python src/run_benchmark.py model.provider=xai
+```
+
+#### Ollama (Local, Easy Setup)
+```bash
+# Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Pull a model
+ollama pull smollm2:1.7b
+
+# Run benchmark
+python src/run_benchmark.py model.provider=ollama
+```
+
+Note: Ollama ignores the `n` parameter, so parallel sampling uses separate API calls.
+
+#### vLLM (Local, True GPU Batching)
+```bash
+# Install vLLM
+pip install vllm
+
+# Start vLLM server
+vllm serve HuggingFaceTB/SmolLM2-1.7B-Instruct --port 8000
+
+# Run benchmark (in another terminal)
+python src/run_benchmark.py model.provider=vllm
+```
+
+vLLM provides true GPU batching with the `n` parameter, making beam search and parallel MCMC much faster.
+
+**vLLM serve options:**
+```bash
+# Basic
+vllm serve HuggingFaceTB/SmolLM2-1.7B-Instruct --port 8000
+
+# With options
+vllm serve HuggingFaceTB/SmolLM2-1.7B-Instruct \
+    --port 8000 \
+    --gpu-memory-utilization 0.9 \
+    --max-model-len 4096
+
+# Multi-GPU
+vllm serve HuggingFaceTB/SmolLM2-1.7B-Instruct \
+    --port 8000 \
+    --tensor-parallel-size 2
+```
+
+| Feature | X.AI | Ollama | vLLM |
+|---------|------|--------|------|
+| Logprobs | ⚠️ Only at temp=0 | ✓ | ✓ |
+| `n` parameter | ✓ | ✗ (ignored) | ✓ |
+| GPU batching | N/A | ✗ (sequential) | ✓ |
+| Setup | API key | Easy | Requires GPU |
+
+### 4. View Results
 
 The script outputs:
 - A comparison table with all metrics

@@ -8,7 +8,7 @@ defaults:
 # Model configuration
 # Provider: "xai", "ollama", or "vllm"
 model:
-  provider: ollama  # Options: xai, ollama, vllm
+  provider: vllm  # Options: xai, ollama, vllm
 
   # X.AI settings (used when provider: xai)
   # Requires XAI_API_KEY environment variable
@@ -77,6 +77,8 @@ mcmc_parallel:
 beam_search:
   enabled: false
   alpha: 2.0 # Power factor for target distribution pi(x) = p(x)^alpha
+  max_concurrent: 100 # Max concurrent API requests
+  timeout: 300.0 # Timeout in seconds (increase for local servers like vLLM)
   beam_width: 5 # Number of parallel beams to maintain (top-k after pruning)
   n_per_beam: 3 # Generate n continuations per beam (enables true beam search)
   tokens_per_step: 256 # Generate this many tokens per expansion

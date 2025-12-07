@@ -267,6 +267,8 @@ def main(cfg: DictConfig):
             top_logprobs=cfg.beam_search.top_logprobs,
             debug=cfg.beam_search.debug,
             supports_n_param=supports_n_param,
+            max_concurrent=getattr(cfg.beam_search, 'max_concurrent', 100),
+            timeout=getattr(cfg.beam_search, 'timeout', 300.0),
         ))
 
     if getattr(cfg.temperature_sampling, 'enabled', False):
