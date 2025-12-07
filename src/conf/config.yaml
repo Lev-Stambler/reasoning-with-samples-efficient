@@ -31,6 +31,7 @@ model:
   # vLLM provides: real logprobs, n parameter support, true GPU batching
   vllm:
     name: HuggingFaceTB/SmolLM2-1.7B-Instruct
+    # name: HuggingFaceTB/SmolLM2-135M-Instruct
     base_url: http://localhost:8000/v1
 
 # Benchmark configuration
@@ -60,11 +61,11 @@ mcmc:
 # Based on: "A general construction for parallelizing Metropolis-Hastings algorithms" (Calderhead 2014, PNAS)
 mcmc_parallel:
   enabled: false
-  alpha: 2.0 # Power factor for target distribution pi(x) = p(x)^alpha
+  alpha: 4.0 # Power factor for target distribution pi(x) = p(x)^alpha
   steps: 1 # MCMC refinement steps per block (1 is typical with N parallel proposals)
-  top_logprobs: 5 # Number of top log probabilities to retrieve
-  proposal_temperature: 0.5 # Temperature for proposal distribution, should be alpha^(-1)
-  block_size: 128 # Block size B for block-wise generation (match mcmc.block_size)
+  top_logprobs: 15 # Number of top log probabilities to retrieve
+  proposal_temperature: 0.25 # Temperature for proposal distribution, should be alpha^(-1)
+  block_size: 32 # Block size B for block-wise generation (match mcmc.block_size)
   debug: true # Print debug info
   length_normalize: false # If true, normalize log_target by length (removes length penalty)
   # Parallel-specific parameters:
@@ -79,12 +80,12 @@ beam_search:
   alpha: 4.0 # Power factor for target distribution pi(x) = p(x)^alpha
   max_concurrent: 100 # Max concurrent API requests
   timeout: 300.0 # Timeout in seconds (increase for local servers like vLLM)
-  beam_width: 3 # Number of parallel beams to maintain (top-k after pruning)
-  n_per_beam: 2 # Generate n continuations per beam (enables true beam search)
-  tokens_per_step: 256 # Generate this many tokens per expansion
+  beam_width: 10 # Number of parallel beams to maintain (top-k after pruning)
+  n_per_beam: 3 # Generate n continuations per beam (enables true beam search)
+  tokens_per_step: 128 # Generate this many tokens per expansion
   use_length_penalty: false # Whether to apply length normalization (set false to disable)
   length_penalty: 0.0 # Length normalization exponent (0.6 = Google NMT, only used if use_length_penalty=true)
-  proposal_temperature: 0.25 # Temperature for proposal distribution
+  proposal_temperature: 0.5 # Temperature for proposal distribution, higher temp = more "exploration"
   top_logprobs: 15 # Number of top log probabilities to retrieve
   debug: false # Print debug info during beam search
 
