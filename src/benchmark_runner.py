@@ -2,10 +2,11 @@ import os
 import time
 import json
 import tempfile
+import asyncio
 from typing import Dict, List, Callable, Any, Optional
 from dataclasses import dataclass, asdict
 from abc import ABC, abstractmethod
-from openai import OpenAI
+from openai import OpenAI, AsyncOpenAI
 from datasets import load_dataset
 import random
 import re
@@ -504,6 +505,87 @@ class BeamSearchSampling(SamplingStrategy):
         # Token usage is for ALL n samples combined
         return results, response.usage.prompt_tokens, response.usage.completion_tokens
     
+    async def _sample_continuation_multiple_async(self, client: AsyncOpenAI, prompt: str, prefix: str, max_tokens: int, n: int):
+        """Async version: Generate n continuations from a prefix for true beam search expansion."""
+        response = await client.chat.completions.create(
+            model=client.default_model,
+            messages=[
+                {"role": "user", "content": prompt},
+                {"role": "assistant", "content": prefix}
+            ],
+            temperature=self.proposal_temperature,
+            max_tokens=max_tokens,
+            logprobs=True,
+            top_logprobs=self.top_logprobs,
+            n=n,  # Generate n different samples
+        )
+        
+        # Extract all n continuations (same logic as sync version)
+        results = []
+        for choice in response.choices:
+            continuation = choice.message.content
+            
+            # Extract logprobs for this choice
+            if choice.logprobs and choice.logprobs.content:
+                tokens = [t.token for t in choice.logprobs.content]
+                log_p = [t.logprob for t in choice.logprobs.content]
+                log_target = [self.alpha * lp for lp in log_p]
+            else:
+                tokens = []
+                log_p = []
+                log_target = []
+            
+            finished_naturally = choice.finish_reason == "stop"
+            
+            results.append((continuation, tokens, log_p, log_target, finished_naturally))
+        
+        # Token usage is for ALL n samples combined
+        return results, response.usage.prompt_tokens, response.usage.completion_tokens
+    
+    async def _expand_beams_parallel(self, client: AsyncOpenAI, active_beams, prompt, block_num):
+        """Parallelize beam expansion using async/await."""
+        tasks = []
+        
+        for beam_text, beam_tokens, beam_log_p, beam_log_target, _ in active_beams:
+            if block_num == 0 and not beam_text:
+                # First expansion: generate from scratch with n samples
+                task = self._sample_continuation_multiple_async(
+                    client, prompt, "", self.tokens_per_step, n=self.n_per_beam
+                )
+            else:
+                # Subsequent expansions: generate n continuations from this beam
+                task = self._sample_continuation_multiple_async(
+                    client, prompt, beam_text, self.tokens_per_step, n=self.n_per_beam
+                )
+            tasks.append((task, (beam_text, beam_tokens, beam_log_p, beam_log_target)))
+        
+        # Run all API calls in parallel!
+        results = await asyncio.gather(*[task for task, _ in tasks])
+        
+        # Process results and create candidate beams
+        candidate_beams = []
+        total_pt = 0
+        total_ct = 0
+        
+        for i, (continuations, pt, ct) in enumerate(results):
+            total_pt += pt
+            total_ct += ct
+            beam_text, beam_tokens, beam_log_p, beam_log_target = tasks[i][1]
+            
+            for text, tokens, log_p, log_target, finished in continuations:
+                if block_num == 0:
+                    # First block
+                    candidate_beams.append((text, tokens, log_p, log_target, finished))
+                else:
+                    # Subsequent blocks - concatenate with beam prefix
+                    new_text = beam_text + text
+                    new_tokens = beam_tokens + tokens
+                    new_log_p = beam_log_p + log_p
+                    new_log_target = beam_log_target + log_target
+                    candidate_beams.append((new_text, new_tokens, new_log_p, new_log_target, finished))
+        
+        return candidate_beams, total_pt, total_ct
+    
     def _calculate_beam_score(self, log_target: list[float], length: int) -> float:
         """Calculate length-normalized beam score."""
         if length == 0:
@@ -512,18 +594,18 @@ class BeamSearchSampling(SamplingStrategy):
         normalized_score = cumulative_score / (length ** self.length_penalty)
         return normalized_score
     
-    def generate(self, client: OpenAI, prompt: str, max_tokens: int = 512) -> tuple[str, int, int]:
+    async def _generate_async(self, client: AsyncOpenAI, prompt: str, max_tokens: int = 512) -> tuple[str, int, int]:
         """
-        Generate completion using TRUE beam search with power sampling.
+        Async version of generate() with parallel beam expansion.
         
         Algorithm:
         1. Start with empty beam
-        2. For each beam, generate n_per_beam continuations (beam branching)
+        2. For each beam, generate n_per_beam continuations IN PARALLEL (beam branching)
         3. Score all beam_width × n_per_beam candidates using p^α
         4. Keep top beam_width beams by score
         5. Repeat until max_tokens or all beams finish
         
-        With beam_width=5, n_per_beam=5: generates 25 candidates per iteration, keeps top 5.
+        With beam_width=2, n_per_beam=2: generates 4 candidates per iteration in parallel.
         """
         total_prompt_tokens = 0
         total_completion_tokens = 0
@@ -538,52 +620,26 @@ class BeamSearchSampling(SamplingStrategy):
             num_blocks = 1
         
         if self.debug:
-            print(f"[BeamSearch] TRUE beam search: beam_width={self.beam_width}, n_per_beam={self.n_per_beam}")
+            print(f"[BeamSearch] TRUE beam search (ASYNC): beam_width={self.beam_width}, n_per_beam={self.n_per_beam}")
             print(f"[BeamSearch] Generating {num_blocks} blocks of {self.tokens_per_step} tokens")
             print(f"[BeamSearch] α={self.alpha}, length_penalty={self.length_penalty}")
-            print(f"[BeamSearch] Each iteration: {len(active_beams)} beams × {self.n_per_beam} samples = candidates")
+            print(f"[BeamSearch] Each iteration: {len(active_beams)} beams × {self.n_per_beam} samples = candidates (PARALLEL)")
         
         for block_num in range(num_blocks):
             if not active_beams:
                 break
             
-            candidate_beams = []
-            
-            # EXPANSION PHASE: Generate n_per_beam continuations for each active beam
-            for beam_text, beam_tokens, beam_log_p, beam_log_target, _ in active_beams:
-                if block_num == 0 and not beam_text:
-                    # First expansion: generate from scratch with n samples
-                    # Use n=n_per_beam to get multiple initial branches
-                    continuations, pt, ct = self._sample_continuation_multiple(
-                        client, prompt, "", self.tokens_per_step, n=self.n_per_beam
-                    )
-                    total_prompt_tokens += pt
-                    total_completion_tokens += ct
-                    
-                    # Create candidate beam for each continuation
-                    for text, tokens, log_p, log_target, finished in continuations:
-                        candidate_beams.append((text, tokens, log_p, log_target, finished))
-                else:
-                    # Subsequent expansions: generate n continuations from this beam
-                    continuations, pt, ct = self._sample_continuation_multiple(
-                        client, prompt, beam_text, self.tokens_per_step, n=self.n_per_beam
-                    )
-                    total_prompt_tokens += pt
-                    total_completion_tokens += ct
-                    
-                    # Create candidate beam for each continuation
-                    for text, tokens, log_p, log_target, finished in continuations:
-                        new_text = beam_text + text
-                        new_tokens = beam_tokens + tokens
-                        new_log_p = beam_log_p + log_p
-                        new_log_target = beam_log_target + log_target
-                        
-                        candidate_beams.append((new_text, new_tokens, new_log_p, new_log_target, finished))
+            # PARALLEL EXPANSION PHASE: Generate n_per_beam continuations for ALL beams at once
+            candidate_beams, pt, ct = await self._expand_beams_parallel(
+                client, active_beams, prompt, block_num
+            )
+            total_prompt_tokens += pt
+            total_completion_tokens += ct
             
             num_expansions += 1
             
             if self.debug:
-                print(f"[BeamSearch] Block {block_num+1}: Generated {len(candidate_beams)} candidates")
+                print(f"[BeamSearch] Block {block_num+1}: Generated {len(candidate_beams)} candidates (parallel)")
             
             # Score all candidates
             scored_beams = []
@@ -641,6 +697,38 @@ class BeamSearchSampling(SamplingStrategy):
             print(f"[BeamSearch] Text: {best_text[:200]}..." if len(best_text) > 200 else f"[BeamSearch] Text: {best_text}")
         
         return best_text, total_prompt_tokens, total_completion_tokens
+    
+    async def _run_with_client(self, api_key: str, base_url: str, model: str, prompt: str, max_tokens: int):
+        """Helper to run async generation with proper client lifecycle."""
+        async with AsyncOpenAI(api_key=api_key, base_url=base_url) as async_client:
+            async_client.default_model = model
+            return await self._generate_async(async_client, prompt, max_tokens)
+    
+    def generate(self, client: OpenAI, prompt: str, max_tokens: int = 512) -> tuple[str, int, int]:
+        """
+        Generate completion using TRUE beam search with power sampling (with async parallelization).
+        
+        This method wraps the async implementation and creates an AsyncOpenAI client automatically.
+        
+        Algorithm:
+        1. Start with empty beam
+        2. For each beam, generate n_per_beam continuations IN PARALLEL (beam branching)
+        3. Score all beam_width × n_per_beam candidates using p^α
+        4. Keep top beam_width beams by score
+        5. Repeat until max_tokens or all beams finish
+        
+        With beam_width=2, n_per_beam=2: generates 4 candidates per iteration in parallel.
+        """
+        # Run async version with proper client lifecycle management
+        return asyncio.run(
+            self._run_with_client(
+                api_key=client.api_key,
+                base_url=str(client.base_url) if client.base_url else "https://api.openai.com/v1",
+                model=client.default_model,
+                prompt=prompt,
+                max_tokens=max_tokens
+            )
+        )
     
     def get_num_expansions(self) -> int:
         """Return the number of expansions from the last generate() call."""
