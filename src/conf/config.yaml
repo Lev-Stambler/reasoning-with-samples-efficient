@@ -23,7 +23,7 @@ mcmc:
   steps: 10                     # Number of MCMC refinement steps
   top_logprobs: 5               # Number of top log probabilities to retrieve
   proposal_temperature: 0.59     # Temperature for proposal distribution, should be alpha^(-1)
-  restrict_to_last_n: null      # Only resample last N tokens (null = disabled, int = enabled)
+  restrict_to_last_n: null      # Only resample last N blocks (null = disabled, int = enabled)
   block_size: 192                # Block size B for block-wise generation (paper default)
   debug: true                   # Print debug info during MCMC (acceptance/rejection, log_r, etc.)
 

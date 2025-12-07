@@ -95,7 +95,7 @@ class MCMCSampling(SamplingStrategy):
         top_logprobs: int = 5,
         proposal_temperature: float = 1.0,
         temperature: float = None,  # Legacy alias for proposal_temperature
-        restrict_to_last_n: int = None,  # Only resample last N tokens (None = disabled)
+        restrict_to_last_n: int = None,  # Only resample last N blocks (None = disabled)
         block_size: int = 192,  # Block size B for block-wise generation (paper default)
         debug: bool = False,  # Print debug info during MCMC
     ):
@@ -248,7 +248,19 @@ class MCMCSampling(SamplingStrategy):
                 attempts += 1
 
                 # Pick random block boundary (keep at least first block)
-                block_idx = random.randint(1, num_complete_blocks - 1)
+                # If restrict_to_last_n is set, only resample from last N blocks
+                if self.restrict_to_last_n is not None:
+                    min_block = max(1, num_complete_blocks - self.restrict_to_last_n)
+                else:
+                    min_block = 1
+
+                # Check if we have a valid range
+                if min_block > num_complete_blocks - 1:
+                    if self.debug:
+                        print(f"[MCMC]   Step {step+1}: Skipping, restrict_to_last_n={self.restrict_to_last_n} too small")
+                    continue
+
+                block_idx = random.randint(min_block, num_complete_blocks - 1)
                 idx = block_idx * self.block_size
 
                 # Prefix to keep (as text)
