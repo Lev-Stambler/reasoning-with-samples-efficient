@@ -61,9 +61,9 @@ benchmark:
 # Prompt customization
 prompt:
   prefix: "" # Text to add before the benchmark prompt
-  suffix: "\n\nThink deeply and show your work, step by step, check your answer and output 'yes' 10 times if you are correct!" # Text to add after the benchmark prompt
+  # suffix: "\n\nThink deeply and show your work, step by step, check your answer and output 'yes' 10 times if you are correct!" # Text to add after the benchmark prompt
   # suffix: "\n\nThink deeply and show your work, step by step" # Text to add after the benchmark prompt
-  # suffix: ""
+  suffix: ""
 
 # MCMC sampling configuration (serial, single proposal per step)
 mcmc:
@@ -81,10 +81,10 @@ mcmc:
 mcmc_parallel:
   enabled: false
   alpha: 5.0 # Power factor for target distribution pi(x) = p(x)^alpha
-  steps: 2 # MCMC refinement steps per block (1 is typical with N parallel proposals)
+  steps: 4 # MCMC refinement steps per block (1 is typical with N parallel proposals)
   top_logprobs: 15 # Number of top log probabilities to retrieve
   proposal_temperature: 0.1 # Temperature for proposal distribution, should be alpha^(-1)
-  block_size: 192 # Block size B for block-wise generation (match mcmc.block_size)
+  block_size: 512 # Block size B for block-wise generation (match mcmc.block_size)
   debug: true # Print debug info
   length_normalize: false # If true, normalize log_target by length (removes length penalty)
   # Parallel-specific parameters:
@@ -116,8 +116,8 @@ temperature_sampling:
 # Greedy sampling configuration
 greedy:
   enabled: true
-  # suffix: "" # Text to add after the benchmark prompt
-  suffix: "\n\nThink deeply and show your work, step by step" # Text to add after the benchmark prompt
+  suffix: "" # Text to add after the benchmark prompt
+  # suffix: "\n\nThink deeply and show your work, step by step" # Text to add after the benchmark prompt
 
 # Output configuration
 output:
