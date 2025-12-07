@@ -103,17 +103,48 @@ class BenchmarkMetrics:
 class SamplingStrategy:
     """Base class for sampling strategies."""
 
+    # Chat templates for different model families
+    # Both Qwen and SmolLM2 use ChatML format
+    CHAT_TEMPLATES = {
+        "chatml": {  # Qwen, SmolLM2, Yi, etc.
+            "user_start": "<|im_start|>user\n",
+            "user_end": "<|im_end|>\n",
+            "assistant_start": "<|im_start|>assistant\n",
+        },
+        "llama3": {  # Llama 3, Llama 3.1, etc.
+            "user_start": "<|start_header_id|>user<|end_header_id|>\n\n",
+            "user_end": "<|eot_id|>",
+            "assistant_start": "<|start_header_id|>assistant<|end_header_id|>\n\n",
+        },
+        "mistral": {  # Mistral, Llama 2, etc.
+            "user_start": "[INST] ",
+            "user_end": " [/INST]",
+            "assistant_start": "",
+        },
+    }
+
+    # Default template - works for Qwen and SmolLM2
+    _chat_template = "chatml"
+
+    @classmethod
+    def set_chat_template(cls, template: str):
+        """Set the chat template for all sampling strategies. Options: 'chatml', 'llama3', 'mistral'"""
+        if template not in cls.CHAT_TEMPLATES:
+            raise ValueError(f"Unknown template: {template}. Options: {list(cls.CHAT_TEMPLATES.keys())}")
+        cls._chat_template = template
+
     def __init__(self, name: str):
         self.name = name
 
     def _apply_chat_template(self, prompt: str, prefix: str = "") -> str:
         """
-        Apply ChatML template for raw completions API.
+        Apply chat template for raw completions API.
 
         Assistant tag is added ONCE at start, prefix appended directly.
         NO closing tag - model continues from exactly where prefix ends.
         """
-        return f"<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n{prefix}"
+        t = self.CHAT_TEMPLATES[self._chat_template]
+        return f"{t['user_start']}{prompt}{t['user_end']}{t['assistant_start']}{prefix}"
 
     def generate(self, client: OpenAI, prompt: str, max_tokens: int = 512) -> tuple[str, int, int]:
         """
@@ -124,21 +155,20 @@ class SamplingStrategy:
 
 
 class GreedySampling(SamplingStrategy):
-    """Greedy decoding with temperature=0 using completions API."""
+    """Greedy decoding with temperature=0 using chat completions API."""
 
     def __init__(self):
         super().__init__("Greedy")
 
     def generate(self, client: OpenAI, prompt: str, max_tokens: int = 512) -> tuple[str, int, int]:
-        full_prompt = self._apply_chat_template(prompt)
-        response = client.completions.create(
+        response = client.chat.completions.create(
             model=client.default_model,
-            prompt=full_prompt,
+            messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
             max_tokens=max_tokens,
         )
         return (
-            response.choices[0].text,
+            response.choices[0].message.content,
             response.usage.prompt_tokens,
             response.usage.completion_tokens
         )
@@ -1670,22 +1700,21 @@ class BeamSearchSampling(SamplingStrategy):
 
 
 class TemperatureSampling(SamplingStrategy):
-    """Standard temperature sampling using completions API."""
+    """Standard temperature sampling using chat completions API."""
 
     def __init__(self, temperature: float = 0.8):
         super().__init__(f"Temperature(T={temperature})")
         self.temperature = temperature
 
     def generate(self, client: OpenAI, prompt: str, max_tokens: int = 512) -> tuple[str, int, int]:
-        full_prompt = self._apply_chat_template(prompt)
-        response = client.completions.create(
+        response = client.chat.completions.create(
             model=client.default_model,
-            prompt=full_prompt,
+            messages=[{"role": "user", "content": prompt}],
             temperature=self.temperature,
             max_tokens=max_tokens,
         )
         return (
-            response.choices[0].text,
+            response.choices[0].message.content,
             response.usage.prompt_tokens,
             response.usage.completion_tokens
         )
