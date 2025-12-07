@@ -106,17 +106,49 @@ class BenchmarkMetrics:
 class SamplingStrategy:
     """Base class for sampling strategies."""
 
+    # Optional tokenizer for apply_chat_template - set via set_tokenizer()
+    _tokenizer = None
+
+    @classmethod
+    def set_tokenizer(cls, tokenizer):
+        """
+        Set the tokenizer to use for chat template formatting.
+
+        Usage:
+            from transformers import AutoTokenizer
+            tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-1.7B-Instruct")
+            SamplingStrategy.set_tokenizer(tokenizer)
+        """
+        cls._tokenizer = tokenizer
+
     def __init__(self, name: str):
         self.name = name
 
     def _apply_chat_template(self, prompt: str, prefix: str = "") -> str:
         """
-        Apply ChatML template for raw completions API.
+        Apply chat template for raw completions API.
 
-        Assistant tag is added ONCE at start, prefix appended directly.
+        Uses tokenizer.apply_chat_template() - tokenizer must be set via set_tokenizer().
+
+        For continuations, prefix is appended after the generation prompt.
         NO closing tag - model continues from exactly where prefix ends.
         """
-        return f"<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n{prefix}"
+        if self._tokenizer is None:
+            raise RuntimeError(
+                "No tokenizer set. Call SamplingStrategy.set_tokenizer(tokenizer) first.\n"
+                "Example:\n"
+                "  from transformers import AutoTokenizer\n"
+                "  tokenizer = AutoTokenizer.from_pretrained('HuggingFaceTB/SmolLM2-1.7B-Instruct')\n"
+                "  SamplingStrategy.set_tokenizer(tokenizer)"
+            )
+        # Use tokenizer's chat template
+        formatted = self._tokenizer.apply_chat_template(
+            [{"role": "user", "content": prompt}],
+            tokenize=False,
+            add_generation_prompt=True
+        )
+        # Append prefix for continuations (no closing tag)
+        return formatted + prefix
 
     def generate(self, client: OpenAI, prompt: str, max_tokens: int = 512) -> tuple[str, int, int]:
         """
