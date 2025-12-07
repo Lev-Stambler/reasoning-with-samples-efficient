@@ -147,6 +147,69 @@ class SamplingStrategy:
         # Append prefix for continuations (no closing tag)
         return formatted + prefix
 
+    def _is_safe_boundary(self, text: str) -> bool:
+        """
+        Check if text can be tokenized and detokenized without drift.
+
+        Tokenizers are not perfectly reversible. When we slice tokens and rejoin
+        them as a string, then send to the API, the API may re-tokenize differently.
+        This validates that encode(decode(encode(text))) == encode(text).
+
+        Returns True if the boundary is safe (no tokenization drift).
+        """
+        if self._tokenizer is None:
+            return True  # Can't validate without tokenizer, assume safe
+
+        try:
+            # Encode the text
+            token_ids = self._tokenizer.encode(text, add_special_tokens=False)
+            # Decode back to text
+            decoded = self._tokenizer.decode(token_ids)
+            # Re-encode
+            re_encoded = self._tokenizer.encode(decoded, add_special_tokens=False)
+            # Check if round-trip is lossless
+            return token_ids == re_encoded
+        except Exception:
+            return True  # On error, assume safe to avoid blocking
+
+    def _find_safe_prefix(self, tokens: list[str], target_idx: int, block_size: int = 16) -> tuple[int, str]:
+        """
+        Find a safe prefix boundary near target_idx where tokenization is reversible.
+
+        Searches for a boundary where joining tokens produces text that can be
+        re-tokenized to the same token IDs. This prevents tokenization drift
+        that would invalidate the Metropolis-Hastings acceptance ratio.
+
+        Args:
+            tokens: List of token strings from the API
+            target_idx: Target index to slice at
+            block_size: Block size for searching (search within this range)
+
+        Returns:
+            (safe_idx, prefix_text) - The safe index and the prefix text to use
+        """
+        # Try the target index first
+        prefix = "".join(tokens[:target_idx])
+        if self._is_safe_boundary(prefix):
+            return target_idx, prefix
+
+        # Search for safe boundary near target
+        for offset in range(1, min(block_size, target_idx)):
+            # Try before target
+            if target_idx - offset >= 1:
+                test_prefix = "".join(tokens[:target_idx - offset])
+                if self._is_safe_boundary(test_prefix):
+                    return target_idx - offset, test_prefix
+
+            # Try after target
+            if target_idx + offset < len(tokens):
+                test_prefix = "".join(tokens[:target_idx + offset])
+                if self._is_safe_boundary(test_prefix):
+                    return target_idx + offset, test_prefix
+
+        # Fallback: use target anyway (may have drift, but better than nothing)
+        return target_idx, prefix
+
     def generate(self, client: OpenAI, prompt: str, max_tokens: int = 512) -> tuple[str, int, int]:
         """
         Generate completion using this strategy.
@@ -324,8 +387,11 @@ class MCMCSampling(SamplingStrategy):
 
         # Generate block by block
         for block_num in range(num_blocks_to_generate):
-            # Generate next block
-            prefix = "".join(tokens_cur) if tokens_cur else ""
+            # Generate next block - validate tokenization boundary
+            if tokens_cur:
+                _, prefix = self._find_safe_prefix(tokens_cur, len(tokens_cur), self.block_size)
+            else:
+                prefix = ""
 
             if block_num == 0:
                 # First block: use _sample_full (no prefix)
@@ -370,10 +436,11 @@ class MCMCSampling(SamplingStrategy):
                     continue
 
                 block_idx = random.randint(min_block, num_complete_blocks - 1)
-                idx = block_idx * self.block_size
+                target_idx = block_idx * self.block_size
 
-                # Prefix to keep (as text)
-                prefix = "".join(tokens_cur[:idx])
+                # Find safe tokenization boundary near target index
+                # This prevents tokenization drift that would invalidate MH ratio
+                idx, prefix = self._find_safe_prefix(tokens_cur, target_idx, self.block_size)
 
                 # Target length for proposal (same as current)
                 target_len = len(tokens_cur) - idx #+ self.block_size
@@ -470,7 +537,7 @@ class ParallelMCMCSampling(SamplingStrategy):
         api_key: Optional[str] = None,
         base_url: str = "https://api.openai.com/v1",
         model: str = "gpt-4o-mini",
-        supports_n_param: bool = True,  # Whether API supports n parameter (vLLM: yes, Ollama: no)
+        supports_n_param: bool = True,  # Whether API supports n parameter for batching
     ):
         name = f"ParallelMCMC(α={alpha},steps={mcmc_steps},B={block_size},N={num_proposals})"
         super().__init__(name)
@@ -560,7 +627,7 @@ class ParallelMCMCSampling(SamplingStrategy):
         Generate N-1 new proposals in parallel + include current state.
 
         When supports_n_param=True (vLLM): Use single call with n parameter for efficient GPU batching.
-        When supports_n_param=False (Ollama): Make separate parallel API calls.
+        When supports_n_param=False: Make separate parallel API calls.
 
         Uses completions API for TRUE continuation.
         """
@@ -594,7 +661,7 @@ class ParallelMCMCSampling(SamplingStrategy):
                 if self.debug:
                     print(f"API Error with n param: {e}")
         else:
-            # Ollama path: Make N-1 separate parallel API calls
+            # Fallback path: Make N-1 separate parallel API calls
             tasks = []
             for _ in range(self.num_proposals - 1):
                 tasks.append(self._call_api(client, prompt, prefix, target_len))
@@ -714,8 +781,11 @@ class ParallelMCMCSampling(SamplingStrategy):
 
         # Generate block by block
         for block_num in range(num_blocks_to_generate):
-            # Generate next block - use prefix for TRUE continuation
-            prefix = "".join(tokens_cur) if tokens_cur else ""
+            # Generate next block - validate tokenization boundary
+            if tokens_cur:
+                _, prefix = self._find_safe_prefix(tokens_cur, len(tokens_cur), self.block_size)
+            else:
+                prefix = ""
 
             block_resp = await self._call_api(client, prompt, prefix, self.block_size)
             block_tokens, block_log_p = self._extract_logprobs_completion(block_resp.choices[0])
@@ -740,9 +810,12 @@ class ParallelMCMCSampling(SamplingStrategy):
 
                 # Block-aligned index selection (keep at least first block)
                 block_idx = random.randint(0, num_complete_blocks - 1) if num_complete_blocks > 0 else 0
-                pivot_idx = block_idx * self.block_size
+                target_idx = block_idx * self.block_size
 
-                prefix = "".join(tokens_cur[:pivot_idx])
+                # Find safe tokenization boundary near target index
+                # This prevents tokenization drift that would invalidate MH ratio
+                pivot_idx, prefix = self._find_safe_prefix(tokens_cur, target_idx, self.block_size)
+
                 suffix_tokens = tokens_cur[pivot_idx:]
                 suffix_log_p = log_p_cur[pivot_idx:]
 
@@ -863,7 +936,7 @@ class BeamSearchSampling(SamplingStrategy):
         proposal_temperature: float = 1.0,
         top_logprobs: int = 5,
         debug: bool = False,
-        supports_n_param: bool = True,  # Whether API supports n parameter (vLLM: yes, Ollama: no)
+        supports_n_param: bool = True,  # Whether API supports n parameter for batching
         max_concurrent: int = 100,  # Max concurrent API requests
         timeout: float = 300.0,  # Timeout in seconds (longer for local servers)
     ):
@@ -1015,7 +1088,7 @@ class BeamSearchSampling(SamplingStrategy):
         Parallelize beam expansion.
 
         When supports_n_param=True (vLLM): Use n parameter for efficient GPU batching.
-        When supports_n_param=False (Ollama): Make separate parallel API calls.
+        When supports_n_param=False: Make separate parallel API calls.
         """
         candidate_beams: list[Beam] = []
         total_pt = 0
@@ -1048,7 +1121,7 @@ class BeamSearchSampling(SamplingStrategy):
                     else:
                         candidate_beams.append(beam.extend(text, tokens, log_p, log_target, finished))
         else:
-            # Ollama path: Make beam_width * n_per_beam separate parallel API calls
+            # Fallback path: Make beam_width * n_per_beam separate parallel API calls
             all_tasks = []
 
             for beam in active_beams:

@@ -187,13 +187,7 @@ def main(cfg: DictConfig):
 
     # Select model config based on provider
     provider = cfg.model.get("provider", "xai")
-    if provider == "ollama":
-        model_name = cfg.model.ollama.name
-        base_url = cfg.model.ollama.base_url
-        api_key = "ollama"  # Ollama doesn't require API key
-        supports_n_param = False  # Ollama ignores n parameter
-        print(f"Using Ollama: {model_name} at {base_url}")
-    elif provider == "vllm":
+    if provider == "vllm":
         model_name = cfg.model.vllm.name
         base_url = cfg.model.vllm.base_url
         api_key = "vllm"  # vLLM doesn't require API key
