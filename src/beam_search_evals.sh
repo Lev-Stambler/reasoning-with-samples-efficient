@@ -76,8 +76,9 @@ rm -f eval_logs/*.log
 # EOF
 
 cat > params.txt << 'EOF'
-beam_width=2 n_per_beam=2 alpha=4.0 length_penalty=0.8 tokens_per_step=256
-beam_width=5 n_per_beam=5 alpha=4.0 length_penalty=0.8 tokens_per_step=256
+beam_width=2 n_per_beam=2 alpha=4.0 tokens_per_step=256
+beam_width=3 n_per_beam=5 alpha=4.0 tokens_per_step=256
+beam_width=5 n_per_beam=5 alpha=4.0 tokens_per_step=256
 EOF
 
 echo "Running 6 experiments in parallel (max 4 at once)..."
@@ -94,11 +95,10 @@ parallel -j 4 --colsep ' ' \
 		beam_search.{2} \
 		beam_search.{3} \
 		beam_search.{4} \
-		beam_search.{5} \
 		greedy.enabled=true \
 		mcmc.enabled=false \
 		temperature_sampling.enabled=false \
-		> eval_logs/exp_{1}_{2}_{3}_{4}_{5}.log 2>&1' \
+		> eval_logs/exp_{1}_{2}_{3}_{4}.log 2>&1' \
 	:::: params.txt
 
 echo ""

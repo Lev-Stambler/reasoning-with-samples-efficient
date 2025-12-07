@@ -14,7 +14,7 @@ model:
 benchmark:
   name: humaneval  # Options: humaneval, swebench, swebench-verified
   num_problems: 10
-  max_tokens: 2_048  # Max tokens for final completion (applied everywhere)
+  max_tokens: 2048  # Max tokens for final completion (applied everywhere)
 
 # MCMC sampling configuration
 mcmc:
