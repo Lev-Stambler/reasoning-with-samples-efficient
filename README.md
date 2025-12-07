@@ -1,5 +1,8 @@
 # Reasoning with Sampling
 
+<img width="4480" height="2564" alt="CleanShot 2025-12-07 at 10 21 10@2x" src="https://github.com/user-attachments/assets/69143c2d-e641-4688-b75b-bbb87f5bcaae" />
+<img width="5042" height="2780" alt="CleanShot 2025-12-07 at 10 20 57@2x" src="https://github.com/user-attachments/assets/9a57d92e-02a9-445c-941a-60946ac74133" />
+
 
 ### [Paper](https://arxiv.org/abs/2510.14901) | [Project Page](https://aakaran.github.io/reasoning_with_sampling/)
 
