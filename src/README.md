@@ -5,7 +5,8 @@ A flexible framework for comparing different sampling strategies across various 
 ## Features
 
 - **Multiple Sampling Strategies**: Greedy, MCMC, Temperature-based sampling
-- **Extensible Benchmarks**: Easy to add new benchmarks (HumanEval included, SWEBench/MATH templates provided)
+- **Multiple Benchmarks**: HumanEval (code completion), SWE-bench (repository-level bug fixing)
+- **Extensible**: Easy to add new benchmarks (MATH template provided)
 - **Comprehensive Metrics**: Pass rate, time, token usage, and more
 - **Beautiful Output**: Formatted tables and visualizations
 
@@ -26,6 +27,9 @@ uv pip install -e ".[dev]"
 ```bash
 # Compare all strategies on HumanEval (first 10 problems)
 python src/run_benchmark.py
+
+# Test on SWE-bench (repository-level bug fixing)
+python src/run_benchmark.py --benchmark swebench --num-problems 5
 
 # With custom options
 python src/run_benchmark.py \
@@ -50,13 +54,13 @@ Example output:
 ==================================================
 HUMANEVAL BENCHMARK RESULTS
 ==================================================
-┌────────────┬──────────────┬─────────────┬──────────────┬────────┬────────┐
-│ Benchmark  │ Model        │ Strategy    │ Pass Rate    │ Time   │ Tokens │
-├────────────┼──────────────┼─────────────┼──────────────┼────────┼────────┤
-│ HumanEval  │ grok-2-1212  │ MCMC(...)   │ 75.0%        │ 12.34s │ 1,234  │
-│ HumanEval  │ grok-2-1212  │ Greedy      │ 70.0%        │ 4.56s  │ 567    │
-│ HumanEval  │ grok-2-1212  │ Temperature │ 65.0%        │ 5.67s  │ 678    │
-└────────────┴──────────────┴─────────────┴──────────────┴────────┴────────┘
+┌────────────┬──────────────┬─────────────┬───────────┬──────┬────────┬─────────┐
+│ Benchmark  │ Model        │ Strategy    │ Pass Rate │ Time │ Tokens │ Cost    │
+├────────────┼──────────────┼─────────────┼───────────┼──────┼────────┼─────────┤
+│ HumanEval  │ grok-2-1212  │ MCMC(...)   │ 75.0%     │ 12s  │ 1,234  │ $0.0074 │
+│ HumanEval  │ grok-2-1212  │ Greedy      │ 70.0%     │ 5s   │ 567    │ $0.0034 │
+│ HumanEval  │ grok-2-1212  │ Temperature │ 65.0%     │ 6s   │ 678    │ $0.0041 │
+└────────────┴──────────────┴─────────────┴───────────┴──────┴────────┴─────────┘
 ```
 
 ## Architecture
@@ -183,13 +187,39 @@ class MyStrategy(SamplingStrategy):
         )
 ```
 
+## Available Benchmarks
+
+### HumanEval (Code Completion)
+- 164 Python programming problems
+- Function-level code completion
+- Default tokens: 512
+```bash
+python src/run_benchmark.py --benchmark humaneval
+```
+
+### SWE-bench Lite (Bug Fixing)
+- 300 real GitHub issues from popular Python repos
+- Repository-level bug fixing and feature addition
+- Default tokens: 2048
+- ⚠️ Uses heuristic evaluation (see SWEBENCH_USAGE.md)
+```bash
+python src/run_benchmark.py --benchmark swebench --num-problems 5
+```
+
+### SWE-bench Verified
+- 500 human-validated issues
+- Higher quality, verified problems
+```bash
+python src/run_benchmark.py --benchmark swebench-verified --num-problems 5
+```
+
 ## CLI Options
 
 ```
---benchmark         Benchmark to use (humaneval, etc.)
+--benchmark         Benchmark to use (humaneval, swebench, swebench-verified)
 --model            LLM model name (default: grok-2-1212)
 --num-problems     Number of problems to test (default: 10)
---max-tokens       Max tokens per completion (default: 512)
+--max-tokens       Max tokens per completion (auto: 512 for HumanEval, 2048 for SWE-bench)
 --strategies       Comma-separated strategies (default: greedy,mcmc,temp)
 --mcmc-steps       MCMC refinement steps (default: 3)
 --temperature      Sampling temperature (default: 0.8)
@@ -201,6 +231,8 @@ class MyStrategy(SamplingStrategy):
 - **Avg Time (s)**: Average time per problem
 - **Total Tokens**: Total tokens used across all problems
 - **Avg Tokens/Problem**: Average tokens per problem
+- **Total Cost ($)**: Total API cost in USD
+- **Cost/Problem ($)**: Average cost per problem in USD
 
 ## Examples
 
