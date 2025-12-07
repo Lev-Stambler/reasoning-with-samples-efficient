@@ -50,3 +50,12 @@ models/
 .sync-to-remote.sh
 
 outputs
+./src/predictions/
+./src/outputs/
+
+# Experiment logs and predictions
+src/eval_logs/
+*.log
+predictions/
+
+src/params.txt

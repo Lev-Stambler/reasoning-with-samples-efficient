@@ -25,6 +25,8 @@ from benchmark_runner import (
     HumanEvalBenchmark,
     GreedySampling,
     MCMCSampling,
+    ParallelMCMCSampling,
+    BeamSearchSampling,
     TemperatureSampling,
     BenchmarkMetrics
 )
@@ -36,6 +38,9 @@ from mmlu_benchmark import (
     MMLUHumanitiesBenchmark,
     MMLUSocialSciencesBenchmark
 )
+from arcagi2_benchmark import ARCAGI2Benchmark, ARCAGI2TrainingBenchmark
+from math_benchmark import MATHBenchmark
+from gpqa_benchmark import GPQABenchmark
 
 # Load environment variables
 load_dotenv()
@@ -51,6 +56,10 @@ BENCHMARK_REGISTRY = {
     "mmlu-stem": MMLUSTEMBenchmark,  # MMLU STEM subjects only
     "mmlu-humanities": MMLUHumanitiesBenchmark,  # MMLU Humanities subjects only
     "mmlu-social": MMLUSocialSciencesBenchmark,  # MMLU Social Sciences subjects only
+    "arcagi2": ARCAGI2Benchmark,  # ARC-AGI-2 evaluation set (120 tasks)
+    "arcagi2-train": ARCAGI2TrainingBenchmark,  # ARC-AGI-2 training set (1,000 tasks)
+    "math": MATHBenchmark,  # MATH500 competition math problems (500 problems)
+    "gpqa": GPQABenchmark,  # GPQA diamond graduate-level questions (~198 problems)
 }
 
 
@@ -167,12 +176,29 @@ def main(cfg: DictConfig):
     if cfg.output.verbose:
         print_config(cfg)
 
-    # Check API key
-    api_key = os.getenv("XAI_API_KEY")
-    if not api_key:
-        print("Error: Please set XAI_API_KEY environment variable")
-        print("   Get your API key from: https://console.x.ai/")
-        return
+    # Select model config based on provider
+    provider = cfg.model.get("provider", "xai")
+    if provider == "ollama":
+        model_name = cfg.model.ollama.name
+        base_url = cfg.model.ollama.base_url
+        api_key = "ollama"  # Ollama doesn't require API key
+        supports_n_param = False  # Ollama ignores n parameter
+        print(f"Using Ollama: {model_name} at {base_url}")
+    elif provider == "vllm":
+        model_name = cfg.model.vllm.name
+        base_url = cfg.model.vllm.base_url
+        api_key = "vllm"  # vLLM doesn't require API key
+        supports_n_param = True  # vLLM supports n parameter for batching
+        print(f"Using vLLM: {model_name} at {base_url}")
+    else:  # xai (default)
+        model_name = cfg.model.xai.name
+        base_url = cfg.model.xai.base_url
+        api_key = os.getenv("XAI_API_KEY")
+        supports_n_param = True  # X.AI supports n parameter
+        if not api_key:
+            print("Error: Please set XAI_API_KEY environment variable")
+            print("   Get your API key from: https://console.x.ai/")
+            return
 
     # Initialize benchmark
     if cfg.benchmark.name not in BENCHMARK_REGISTRY:
@@ -186,9 +212,9 @@ def main(cfg: DictConfig):
     # Initialize runner
     runner = BenchmarkRunner(
         benchmark=benchmark,
-        model_name=cfg.model.name,
+        model_name=model_name,
         api_key=api_key,
-        base_url=cfg.model.base_url,
+        base_url=base_url,
         output_dir="predictions",
         prompt_prefix=cfg.prompt.prefix,
         prompt_suffix=cfg.prompt.suffix
@@ -197,10 +223,10 @@ def main(cfg: DictConfig):
     # Setup strategies based on config
     strategies = []
 
-    if cfg.greedy.enabled:
+    if getattr(cfg.greedy, 'enabled', False):
         strategies.append(GreedySampling())
 
-    if cfg.mcmc.enabled:
+    if getattr(cfg.mcmc, 'enabled', False):
         strategies.append(MCMCSampling(
             alpha=cfg.mcmc.alpha,
             mcmc_steps=cfg.mcmc.steps,
@@ -211,7 +237,41 @@ def main(cfg: DictConfig):
             debug=cfg.mcmc.debug,
         ))
 
-    if cfg.temperature_sampling.enabled:
+    if getattr(cfg.mcmc_parallel, 'enabled', False):
+        strategies.append(ParallelMCMCSampling(
+            alpha=cfg.mcmc_parallel.alpha,
+            mcmc_steps=cfg.mcmc_parallel.steps,
+            top_logprobs=cfg.mcmc_parallel.top_logprobs,
+            proposal_temperature=cfg.mcmc_parallel.proposal_temperature,
+            block_size=cfg.mcmc_parallel.block_size,
+            debug=cfg.mcmc_parallel.debug,
+            num_proposals=cfg.mcmc_parallel.num_proposals,
+            max_concurrent=cfg.mcmc_parallel.max_concurrent,
+            timeout=cfg.mcmc_parallel.timeout,
+            max_retries=cfg.mcmc_parallel.max_retries,
+            api_key=api_key,
+            base_url=base_url,
+            model=model_name,
+            supports_n_param=supports_n_param,
+        ))
+
+    if getattr(cfg.beam_search, 'enabled', False):
+        strategies.append(BeamSearchSampling(
+            alpha=cfg.beam_search.alpha,
+            beam_width=cfg.beam_search.beam_width,
+            n_per_beam=cfg.beam_search.n_per_beam,
+            tokens_per_step=cfg.beam_search.tokens_per_step,
+            use_length_penalty=cfg.beam_search.use_length_penalty,
+            length_penalty=cfg.beam_search.length_penalty,
+            proposal_temperature=cfg.beam_search.proposal_temperature,
+            top_logprobs=cfg.beam_search.top_logprobs,
+            debug=cfg.beam_search.debug,
+            supports_n_param=supports_n_param,
+            max_concurrent=getattr(cfg.beam_search, 'max_concurrent', 100),
+            timeout=getattr(cfg.beam_search, 'timeout', 300.0),
+        ))
+
+    if getattr(cfg.temperature_sampling, 'enabled', False):
         strategies.append(TemperatureSampling(
             temperature=cfg.temperature_sampling.temperature
         ))
