@@ -62,7 +62,7 @@ def math_results(fnames):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("folder", type=str)
+    parser.add_argument("--folder", type=str, required=True)
     args = parser.parse_args()
 
     folder = Path(args.folder)

@@ -64,7 +64,7 @@ if __name__ == "__main__":
         dataset = load_dataset("openai/openai_humaneval", split="test")
 
     print("dataset done")
-    hf_model, tokenizer, autoreg_sampler = load_model_and_tokenizer(model, device, local_files_only=True, trust_remote_code=False)
+    hf_model, tokenizer, autoreg_sampler = load_model_and_tokenizer(model, device, local_files_only=False, trust_remote_code=False)
     print("loaded models")
     results = []
 
