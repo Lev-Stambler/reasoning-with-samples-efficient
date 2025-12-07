@@ -216,6 +216,7 @@ def main(cfg: DictConfig):
             beam_width=cfg.beam_search.beam_width,
             n_per_beam=cfg.beam_search.n_per_beam,
             tokens_per_step=cfg.beam_search.tokens_per_step,
+            use_length_penalty=cfg.beam_search.use_length_penalty,
             length_penalty=cfg.beam_search.length_penalty,
             proposal_temperature=cfg.beam_search.proposal_temperature,
             top_logprobs=cfg.beam_search.top_logprobs,

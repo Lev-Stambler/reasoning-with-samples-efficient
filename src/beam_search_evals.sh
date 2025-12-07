@@ -76,8 +76,8 @@ rm -f eval_logs/*.log
 # EOF
 
 cat > params.txt << 'EOF'
-beam_width=2 n_per_beam=2 alpha=4.0 length_penalty=0.8 tokens_per_step=16
-beam_width=5 n_per_beam=5 alpha=4.0 length_penalty=0.8 tokens_per_step=16
+beam_width=2 n_per_beam=2 alpha=4.0 length_penalty=0.8 tokens_per_step=256
+beam_width=5 n_per_beam=5 alpha=4.0 length_penalty=0.8 tokens_per_step=256
 EOF
 
 echo "Running 6 experiments in parallel (max 4 at once)..."

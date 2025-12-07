@@ -14,7 +14,7 @@ model:
 benchmark:
   name: humaneval  # Options: humaneval, swebench, swebench-verified
   num_problems: 10
-  max_tokens: 128  # Max tokens for final completion (applied everywhere)
+  max_tokens: 2_048  # Max tokens for final completion (applied everywhere)
 
 # MCMC sampling configuration
 mcmc:
@@ -24,7 +24,7 @@ mcmc:
   top_logprobs: 5               # Number of top log probabilities to retrieve
   proposal_temperature: 0.59     # Temperature for proposal distribution, should be alpha^(-1)
   restrict_to_last_n: null      # Only resample last N blocks (null = disabled, int = enabled)
-  block_size: 32                # Block size B for block-wise generation (paper default)
+  block_size: 128                # Block size B for block-wise generation (paper default)
   debug: true                   # Print debug info during MCMC (acceptance/rejection, log_r, etc.)
 
 # Beam search sampling configuration
@@ -34,8 +34,9 @@ beam_search:
   beam_width: 2                  # Number of parallel beams to maintain (top-k after pruning)
   n_per_beam: 2                  # Generate n continuations per beam (enables true beam search)
   tokens_per_step: 192           # Generate this many tokens per expansion
-  length_penalty: 0.6            # Length normalization exponent (0.6 = Google NMT)
-  proposal_temperature: 1.0      # Temperature for proposal distribution
+  use_length_penalty: false       # Whether to apply length normalization (set false to disable)
+  length_penalty: 0.0            # Length normalization exponent (0.6 = Google NMT, only used if use_length_penalty=true)
+  proposal_temperature: 0.25      # Temperature for proposal distribution
   top_logprobs: 5                # Number of top log probabilities to retrieve
   debug: false                   # Print debug info during beam search
 

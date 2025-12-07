@@ -1,0 +1,298 @@
+
+============================================================
+CONFIGURATION
+============================================================
+model:
+  name: grok-4-1-fast-non-reasoning
+  base_url: https://api.x.ai/v1
+benchmark:
+  name: gsm8k
+  num_problems: 30
+  max_tokens: 2048
+mcmc:
+  enabled: false
+  alpha: 1.67
+  steps: 10
+  top_logprobs: 5
+  proposal_temperature: 0.59
+  restrict_to_last_n: null
+  block_size: 128
+  debug: true
+beam_search:
+  enabled: true
+  alpha: 4.0
+  beam_width: 2
+  n_per_beam: 2
+  tokens_per_step: 256
+  use_length_penalty: false
+  length_penalty: 0.8
+  proposal_temperature: 0.25
+  top_logprobs: 5
+  debug: false
+temperature_sampling:
+  enabled: false
+  temperature: 0.8
+greedy:
+  enabled: true
+output:
+  verbose: true
+  save_results: false
+  results_dir: ./results
+
+============================================================
+
+Loading GSM8K dataset...
+
+Running benchmark on 30 GSM8K problems...
+Model: grok-4-1-fast-non-reasoning
+Strategies: ['Greedy', 'BeamSearch(α=4.0,width=2,n=2,tps=256)']
+
+
+Problem 1/30: Problem 1
+  Testing Greedy... [2025-12-07 02:21:38,367][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.38s, 363 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:21:39,727][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.36s, 754 tokens, $0.0002)
+
+Problem 2/30: Problem 2
+  Testing Greedy... [2025-12-07 02:21:40,892][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.16s, 295 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:21:42,006][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.12s, 622 tokens, $0.0002)
+
+Problem 3/30: Problem 3
+  Testing Greedy... [2025-12-07 02:21:43,859][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.85s, 464 tokens, $0.0002)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:21:46,889][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (3.07s, 938 tokens, $0.0003)
+
+Problem 4/30: Problem 4
+  Testing Greedy... [2025-12-07 02:21:47,631][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (0.70s, 321 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:21:48,663][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.06s, 670 tokens, $0.0002)
+
+Problem 5/30: Problem 5
+  Testing Greedy... [2025-12-07 02:21:50,410][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.72s, 470 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:21:52,816][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (2.41s, 881 tokens, $0.0002)
+
+Problem 6/30: Problem 6
+  Testing Greedy... [2025-12-07 02:21:54,676][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.86s, 483 tokens, $0.0002)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:21:56,790][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (2.14s, 1023 tokens, $0.0003)
+
+Problem 7/30: Problem 7
+  Testing Greedy... [2025-12-07 02:21:57,689][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (0.87s, 340 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:21:59,035][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.36s, 699 tokens, $0.0002)
+
+Problem 8/30: Problem 8
+  Testing Greedy... [2025-12-07 02:22:02,564][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (3.51s, 611 tokens, $0.0002)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:22:05,531][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (3.03s, 1040 tokens, $0.0003)
+
+Problem 9/30: Problem 9
+  Testing Greedy... [2025-12-07 02:22:08,451][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (2.85s, 703 tokens, $0.0003)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:22:10,604][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:22:12,923][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:22:13,088][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:22:15,053][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:22:15,070][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✗ FAIL (6.67s, 8587 tokens, $0.0024)
+    incorrect: got 0, expected 45
+
+Problem 10/30: Problem 10
+  Testing Greedy... [2025-12-07 02:22:16,596][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.47s, 462 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:22:18,230][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.64s, 858 tokens, $0.0003)
+
+Problem 11/30: Problem 11
+  Testing Greedy... [2025-12-07 02:22:20,176][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.94s, 492 tokens, $0.0002)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:22:22,391][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (2.23s, 991 tokens, $0.0003)
+
+Problem 12/30: Problem 12
+  Testing Greedy... [2025-12-07 02:22:23,631][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.22s, 443 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:22:25,297][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.68s, 828 tokens, $0.0002)
+
+Problem 13/30: Problem 13
+  Testing Greedy... [2025-12-07 02:22:28,343][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (3.03s, 660 tokens, $0.0002)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:22:30,917][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:22:32,920][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:22:33,092][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (4.93s, 4204 tokens, $0.0013)
+
+Problem 14/30: Problem 14
+  Testing Greedy... [2025-12-07 02:22:36,252][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (2.98s, 632 tokens, $0.0002)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:22:40,036][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:22:42,413][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:22:42,797][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:22:45,059][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:22:45,868][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:22:47,934][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:22:47,988][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:22:50,646][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:22:50,648][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:22:52,252][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:22:52,272][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:22:54,448][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:22:54,458][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:22:56,141][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:22:56,142][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (19.95s, 44632 tokens, $0.0112)
+
+Problem 15/30: Problem 15
+  Testing Greedy... [2025-12-07 02:22:57,803][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.60s, 421 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:22:59,326][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.54s, 834 tokens, $0.0003)
+
+Problem 16/30: Problem 16
+  Testing Greedy... [2025-12-07 02:23:01,020][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.67s, 534 tokens, $0.0002)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:23:03,674][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:23:04,931][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (3.93s, 2656 tokens, $0.0008)
+
+Problem 17/30: Problem 17
+  Testing Greedy... [2025-12-07 02:23:06,157][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.21s, 399 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:23:08,314][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (2.30s, 837 tokens, $0.0003)
+
+Problem 18/30: Problem 18
+  Testing Greedy... [2025-12-07 02:23:09,827][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.37s, 445 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:23:12,435][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (2.65s, 772 tokens, $0.0002)
+
+Problem 19/30: Problem 19
+  Testing Greedy... [2025-12-07 02:23:13,423][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (0.94s, 337 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:23:15,760][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (2.36s, 795 tokens, $0.0002)
+
+Problem 20/30: Problem 20
+  Testing Greedy... [2025-12-07 02:23:18,358][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (2.57s, 573 tokens, $0.0002)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:23:20,765][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:23:22,557][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (4.28s, 2439 tokens, $0.0007)
+
+Problem 21/30: Problem 21
+  Testing Greedy... [2025-12-07 02:23:25,589][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (2.95s, 586 tokens, $0.0002)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:23:27,654][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:23:29,164][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:23:30,159][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (4.66s, 4150 tokens, $0.0013)
+
+Problem 22/30: Problem 22
+  Testing Greedy... [2025-12-07 02:23:31,843][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.59s, 406 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:23:32,808][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.04s, 680 tokens, $0.0002)
+
+Problem 23/30: Problem 23
+  Testing Greedy... [2025-12-07 02:23:33,883][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.00s, 405 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:23:36,231][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (2.41s, 801 tokens, $0.0002)
+
+Problem 24/30: Problem 24
+  Testing Greedy... [2025-12-07 02:23:37,708][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.41s, 460 tokens, $0.0002)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:23:38,947][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.27s, 711 tokens, $0.0002)
+
+Problem 25/30: Problem 25
+  Testing Greedy... [2025-12-07 02:23:40,584][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.61s, 462 tokens, $0.0002)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:23:42,392][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.81s, 841 tokens, $0.0003)
+
+Problem 26/30: Problem 26
+  Testing Greedy... [2025-12-07 02:23:43,941][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.54s, 522 tokens, $0.0002)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:23:47,853][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[2025-12-07 02:23:48,357][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (4.42s, 2163 tokens, $0.0006)
+
+Problem 27/30: Problem 27
+  Testing Greedy... [2025-12-07 02:23:49,390][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.03s, 449 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:23:50,573][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.24s, 813 tokens, $0.0002)
+
+Problem 28/30: Problem 28
+  Testing Greedy... [2025-12-07 02:23:51,579][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (0.95s, 355 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:23:52,908][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.34s, 722 tokens, $0.0002)
+
+Problem 29/30: Problem 29
+  Testing Greedy... [2025-12-07 02:23:54,180][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.26s, 355 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:23:55,452][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.28s, 683 tokens, $0.0002)
+
+Problem 30/30: Problem 30
+  Testing Greedy... [2025-12-07 02:23:56,651][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (1.19s, 421 tokens, $0.0001)
+  Testing BeamSearch(α=4.0,width=2,n=2,tps=256)... [2025-12-07 02:23:58,669][httpx][INFO] - HTTP Request: POST https://api.x.ai/v1/chat/completions "HTTP/1.1 200 OK"
+✓ PASS (2.03s, 831 tokens, $0.0002)
+
+📁 Saved predictions to: predictions/gsm8k_grok_4_1_fast_non_reasoning_Greedy.jsonl
+   Total predictions: 30
+
+📁 Saved predictions to: predictions/gsm8k_grok_4_1_fast_non_reasoning_BeamSearch_α4.0_width2_n2_tps256.jsonl
+   Total predictions: 30
+
+==============================================================================================================
+GSM8K BENCHMARK RESULTS
+==============================================================================================================
++-------------+-----------------------------+---------------------------------------+-----------------+----------------+----------------+----------------------+------------------+--------------------+------------+
+| Benchmark   | Model                       | Strategy                              | Pass Rate (%)   |   Avg Time (s) | Total Tokens   |   Avg Tokens/Problem | Total Cost ($)   | Cost/Problem ($)   |   Problems |
++=============+=============================+=======================================+=================+================+================+======================+==================+====================+============+
+| GSM8K       | grok-4-1-fast-non-reasoning | Greedy                                | 100.0%          |           1.68 | 13,869         |                462.3 | $0.0045          | $0.0001            |         30 |
++-------------+-----------------------------+---------------------------------------+-----------------+----------------+----------------+----------------------+------------------+--------------------+------------+
+| GSM8K       | grok-4-1-fast-non-reasoning | BeamSearch(α=4.0,width=2,n=2,tps=256) | 96.7%           |           3.04 | 87,455         |               2915.2 | $0.0239          | $0.0008            |         30 |
++-------------+-----------------------------+---------------------------------------+-----------------+----------------+----------------+----------------------+------------------+--------------------+------------+
+====================================================================================================
+
+🏆 Best Overall: Greedy on GSM8K with grok-4-1-fast-non-reasoning
+   Pass Rate: 100.0% | Time: 1.68s | Cost: $0.0001
+
+====================================================================================================
+SUMMARY
+====================================================================================================
+
+Pass Rate Comparison:
+  Greedy                         ################################################## 100.0%
+  BeamSearch(α=4.0,width=2,n=2,tps=256) ################################################ 96.7%
+
+Time Efficiency:
+  Greedy                         1.68s avg per problem
+  BeamSearch(α=4.0,width=2,n=2,tps=256) 3.04s avg per problem
+
+Token Usage:
+  Greedy                         462 tokens avg per problem
+  BeamSearch(α=4.0,width=2,n=2,tps=256) 2915 tokens avg per problem
+
+💰 Cost Efficiency:
+  Greedy                         $0.0001 per problem ($0.0045 total)
+  BeamSearch(α=4.0,width=2,n=2,tps=256) $0.0008 per problem ($0.0239 total)
+====================================================================================================
+
