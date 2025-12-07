@@ -80,7 +80,7 @@ predictions/swe_bench_lite_grok_4_1_fast_reasoning_Greedy.jsonl
 | `model.name` | Model to use (e.g., grok-4-1-fast-reasoning) | grok-2-1212 |
 | `benchmark.name` | Benchmark: `swebench`, `swebench-verified`, `humaneval` | humaneval |
 | `benchmark.num_problems` | Number of problems to test | 10 |
-| `benchmark.max_tokens` | Max tokens per completion | 512 (auto 2048 for SWE-bench) |
+| `benchmark.max_tokens` | Max tokens per completion | 3072 |
 | `greedy.enabled` | Enable greedy sampling | true |
 | `mcmc.enabled` | Enable MCMC sampling | true |
 | `mcmc.alpha` | MCMC power factor | 1.67 |

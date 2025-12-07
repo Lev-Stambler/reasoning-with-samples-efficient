@@ -207,18 +207,12 @@ def main(cfg: DictConfig):
         print("❌ Error: No strategies enabled in configuration")
         return
 
-    # Determine max_tokens based on benchmark if not explicitly set
-    max_tokens = cfg.benchmark.max_tokens
-    if cfg.benchmark.name in ["swebench", "swebench-verified"] and max_tokens == 512:
-        # Use higher default for SWE-bench
-        max_tokens = 2048
-
     # Run benchmark
     try:
         metrics_dict = runner.run_benchmark(
             strategies=strategies,
             num_problems=cfg.benchmark.num_problems,
-            max_tokens=max_tokens
+            max_tokens=cfg.benchmark.max_tokens
         )
 
         metrics_list = list(metrics_dict.values())

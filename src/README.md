@@ -278,7 +278,7 @@ model.base_url: https://api.x.ai/v1
 # Benchmark
 benchmark.name: humaneval        # Benchmark to use (humaneval, swebench, swebench-verified)
 benchmark.num_problems: 10       # Number of problems to test
-benchmark.max_tokens: 512        # Max tokens per completion
+benchmark.max_tokens: 3072       # Max tokens per completion
 
 # MCMC Sampling
 mcmc.enabled: true               # Enable MCMC strategy
