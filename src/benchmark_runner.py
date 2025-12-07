@@ -12,6 +12,47 @@ import re
 import numpy as np
 
 
+# Pricing per 1M tokens (input, output) in USD
+MODEL_PRICING = {
+    "grok-beta": (3.00, 15.00),  # High-end reasoning model (likely alias for base grok-4)
+    "grok-2-1212": (2.00, 10.00),
+    "grok-2-latest": (2.00, 10.00),
+    "grok-4-1-fast-non-reasoning": (0.20, 0.50),  # Fast, low-latency variant (10-20x cheaper!)
+    "grok-4-1-fast-reasoning": (0.20, 0.50),  # Fast reasoning variant with chain-of-thought
+    "gpt-4": (30.00, 60.00),
+    "gpt-4-turbo": (10.00, 30.00),
+    "gpt-3.5-turbo": (0.50, 1.50),
+    "claude-3-opus": (15.00, 75.00),
+    "claude-3-sonnet": (3.00, 15.00),
+    "claude-3-haiku": (0.25, 1.25),
+    # Default pricing for unknown models
+    "default": (2.00, 10.00),
+}
+
+
+def calculate_cost(model_name: str, prompt_tokens: int, completion_tokens: int) -> float:
+    """
+    Calculate cost in USD for API usage.
+    
+    Args:
+        model_name: Name of the model
+        prompt_tokens: Number of input tokens
+        completion_tokens: Number of output tokens
+    
+    Returns:
+        Cost in USD
+    """
+    # Get pricing or use default
+    pricing = MODEL_PRICING.get(model_name, MODEL_PRICING["default"])
+    input_price_per_million, output_price_per_million = pricing
+    
+    # Calculate cost
+    input_cost = (prompt_tokens / 1_000_000) * input_price_per_million
+    output_cost = (completion_tokens / 1_000_000) * output_price_per_million
+    
+    return input_cost + output_cost
+
+
 @dataclass
 class SamplingResult:
     """Results for a single problem with a specific sampling strategy."""
@@ -21,8 +62,23 @@ class SamplingResult:
     completion_tokens: int
     total_tokens: int
     time_seconds: float
+    cost_usd: float
     passed: bool = False
     metadata: Optional[Dict] = None  # For benchmark-specific data
+    
+    def to_dict(self) -> Dict:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "task_id": self.task_id,
+            "completion": self.completion,
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "total_tokens": self.total_tokens,
+            "time_seconds": self.time_seconds,
+            "cost_usd": self.cost_usd,
+            "passed": self.passed,
+            "metadata": self.metadata or {}
+        }
 
 
 @dataclass
@@ -35,6 +91,8 @@ class BenchmarkMetrics:
     avg_time: float
     total_tokens: int
     avg_tokens_per_problem: float
+    total_cost: float
+    cost_per_problem: float
     num_problems: int
 
 
@@ -654,6 +712,14 @@ class Benchmark(ABC):
         Returns: (passed, result_message)
         """
         pass
+    
+    @abstractmethod
+    def format_prediction(self, problem: Dict, completion: str) -> Dict:
+        """
+        Format a prediction for official evaluation tools.
+        Returns: Dictionary in the format expected by the benchmark's evaluator.
+        """
+        pass
 
 
 class HumanEvalBenchmark(Benchmark):
@@ -684,8 +750,19 @@ class HumanEvalBenchmark(Benchmark):
         return extract_code_completion(response, problem["entry_point"])
     
     def check_correctness(self, problem: Dict, completion: str) -> tuple[bool, str]:
-        """Check if code passes tests."""
-        return check_code_execution(problem, completion)
+        """
+        DEPRECATED: Use official evaluation instead.
+        This method is not reliable - use format_prediction() and official evaluators.
+        """
+        # Return None to indicate evaluation should be done externally
+        return False, "use_official_evaluator"
+    
+    def format_prediction(self, problem: Dict, completion: str) -> Dict:
+        """Format prediction for HumanEval official evaluator."""
+        return {
+            "task_id": problem["task_id"],
+            "completion": completion
+        }
 
 
 def extract_code_completion(response: str, entry_point: str) -> str:
@@ -753,13 +830,18 @@ class BenchmarkRunner:
         benchmark: Benchmark,
         model_name: str,
         api_key: str,
-        base_url: str = "https://api.x.ai/v1"
+        base_url: str = "https://api.x.ai/v1",
+        output_dir: str = "predictions"
     ):
         self.benchmark = benchmark
         self.model_name = model_name
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.client.default_model = model_name
         self.results: List[SamplingResult] = []
+        self.output_dir = output_dir
+        
+        # Create output directory
+        os.makedirs(output_dir, exist_ok=True)
     
     def run_single_problem(
         self,
@@ -787,6 +869,9 @@ class BenchmarkRunner:
         # Check correctness using benchmark
         passed, result_msg = self.benchmark.check_correctness(problem, extracted_completion)
         
+        # Calculate cost
+        cost = calculate_cost(self.model_name, prompt_tokens, completion_tokens)
+        
         return SamplingResult(
             task_id=task_id,
             completion=extracted_completion,
@@ -794,6 +879,7 @@ class BenchmarkRunner:
             completion_tokens=completion_tokens,
             total_tokens=prompt_tokens + completion_tokens,
             time_seconds=elapsed_time,
+            cost_usd=cost,
             passed=passed,
             metadata={"result_message": result_msg}
         )
@@ -802,10 +888,12 @@ class BenchmarkRunner:
         self,
         strategies: List[SamplingStrategy],
         num_problems: int = 10,
-        max_tokens: int = 512
+        max_tokens: int = 512,
+        run_id: str = None
     ) -> Dict[str, BenchmarkMetrics]:
         """
         Run benchmark for multiple strategies.
+        Generates prediction files for official evaluation.
         Returns: Dict mapping strategy name to metrics.
         """
         # Load benchmark dataset
@@ -813,6 +901,7 @@ class BenchmarkRunner:
         self.benchmark.load_dataset()
         
         results_by_strategy: Dict[str, List[SamplingResult]] = {s.name: [] for s in strategies}
+        predictions_by_strategy: Dict[str, List[Dict]] = {s.name: [] for s in strategies}
         
         print(f"\nRunning benchmark on {num_problems} {self.benchmark.name()} problems...")
         print(f"Model: {self.model_name}")
@@ -822,7 +911,7 @@ class BenchmarkRunner:
         
         for i in range(num_problems):
             problem = self.benchmark.get_problem(i)
-            task_id = problem.get("task_id") or problem.get("id") or f"Problem {i+1}"
+            task_id = problem.get("task_id") or problem.get("instance_id") or problem.get("id") or f"Problem {i+1}"
             print(f"\nProblem {i+1}/{num_problems}: {task_id}")
             
             for strategy in strategies:
@@ -830,29 +919,78 @@ class BenchmarkRunner:
                 try:
                     result = self.run_single_problem(problem, strategy, max_tokens)
                     results_by_strategy[strategy.name].append(result)
-                    status = "✓ PASS" if result.passed else "✗ FAIL"
-                    print(f"{status} ({result.time_seconds:.2f}s, {result.total_tokens} tokens)")
+                    
+                    # Format prediction for official evaluator
+                    prediction = self.benchmark.format_prediction(problem, result.completion)
+                    predictions_by_strategy[strategy.name].append(prediction)
+                    
+                    print(f"✓ Generated ({result.time_seconds:.2f}s, {result.total_tokens} tokens, ${result.cost_usd:.4f})")
                 except Exception as e:
                     print(f"✗ ERROR: {str(e)[:50]}")
         
-        # Aggregate metrics
+        # Save prediction files
+        for strategy_name, predictions in predictions_by_strategy.items():
+            if predictions:
+                self.save_predictions(predictions, strategy_name, run_id)
+        
+        # Aggregate metrics (without pass rates - those come from official evaluation)
         metrics = {}
         for strategy_name, results in results_by_strategy.items():
             if not results:
                 continue
             
+            total_cost = sum(r.cost_usd for r in results)
+            
             metrics[strategy_name] = BenchmarkMetrics(
                 model_name=self.model_name,
                 strategy_name=strategy_name,
                 benchmark_name=self.benchmark.name(),
-                pass_rate=sum(r.passed for r in results) / len(results) * 100,
+                pass_rate=0.0,  # Will be filled by official evaluation
                 avg_time=sum(r.time_seconds for r in results) / len(results),
                 total_tokens=sum(r.total_tokens for r in results),
                 avg_tokens_per_problem=sum(r.total_tokens for r in results) / len(results),
+                total_cost=total_cost,
+                cost_per_problem=total_cost / len(results),
                 num_problems=len(results)
             )
         
         return metrics
+    
+    def save_predictions(self, predictions: List[Dict], strategy_name: str, run_id: str = None):
+        """Save predictions to file for official evaluation."""
+        # Clean strategy name for filename
+        safe_strategy = strategy_name.replace("(", "_").replace(")", "").replace("=", "").replace(",", "_").replace(" ", "")
+        safe_model = self.model_name.replace("/", "_").replace("-", "_")
+        safe_benchmark = self.benchmark.name().replace("-", "_").lower()
+        
+        # Create filename
+        if run_id:
+            filename = f"{safe_benchmark}_{safe_model}_{safe_strategy}_{run_id}.jsonl"
+        else:
+            filename = f"{safe_benchmark}_{safe_model}_{safe_strategy}.jsonl"
+        
+        filepath = os.path.join(self.output_dir, filename)
+        
+        # Write JSONL file
+        with open(filepath, 'w') as f:
+            for pred in predictions:
+                f.write(json.dumps(pred) + '\n')
+        
+        print(f"\n📁 Saved predictions to: {filepath}")
+        print(f"   Total predictions: {len(predictions)}")
+        
+        # Print evaluation command
+        if self.benchmark.name() == "HumanEval":
+            print(f"\n   To evaluate, run:")
+            print(f"   evaluate_functional_correctness {filepath}")
+        elif "SWE-bench" in self.benchmark.name():
+            print(f"\n   To evaluate, run:")
+            print(f"   python -m swebench.harness.run_evaluation \\")
+            print(f"     --predictions_path {filepath} \\")
+            print(f"     --swe_bench_tasks <path-to-tasks> \\")
+            print(f"     --log_dir logs/")
+        
+        return filepath
     
     def save_results(self, filename: str):
         """Save detailed results to JSON."""

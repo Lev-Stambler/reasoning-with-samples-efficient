@@ -31,6 +31,7 @@ dependencies = [
     "safetensors",
     "einops",
     "pylatexenc",
+    "swebench",
 ]
 
 [project.optional-dependencies]
@@ -38,6 +39,11 @@ dev = [
     "pytest",
     "ipython",
     "ipykernel",
+]
+eval = [
+    "human-eval",
+    "swebench",
+    "modal",
 ]
 
 [build-system]
