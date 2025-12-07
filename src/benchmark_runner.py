@@ -556,7 +556,9 @@ class BenchmarkRunner:
         model_name: str,
         api_key: str,
         base_url: str = "https://api.x.ai/v1",
-        output_dir: str = "predictions"
+        output_dir: str = "predictions",
+        prompt_prefix: str = "",
+        prompt_suffix: str = ""
     ):
         self.benchmark = benchmark
         self.model_name = model_name
@@ -564,6 +566,8 @@ class BenchmarkRunner:
         self.client.default_model = model_name
         self.results: List[SamplingResult] = []
         self.output_dir = output_dir
+        self.prompt_prefix = prompt_prefix
+        self.prompt_suffix = prompt_suffix
         
         # Create output directory
         os.makedirs(output_dir, exist_ok=True)
@@ -580,6 +584,12 @@ class BenchmarkRunner:
         
         # Format prompt using benchmark
         prompt = self.benchmark.format_prompt(problem)
+        
+        # Apply custom prefix/suffix if provided
+        if self.prompt_prefix:
+            prompt = self.prompt_prefix + prompt
+        if self.prompt_suffix:
+            prompt = prompt + self.prompt_suffix
         
         # Generate completion
         start_time = time.time()

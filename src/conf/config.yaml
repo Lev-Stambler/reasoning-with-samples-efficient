@@ -12,9 +12,14 @@ model:
 
 # Benchmark configuration
 benchmark:
-  name: humaneval  # Options: humaneval, swebench, swebench-verified
+  name: humaneval  # Options: humaneval, swebench, swebench-verified, gsm8k, mmlu
   num_problems: 10
   max_tokens: 128  # Max tokens for final completion (applied everywhere)
+
+# Prompt customization
+prompt:
+  prefix: ""  # Text to add before the benchmark prompt
+  suffix: "\n\nThink deeply and show your work."  # Text to add after the benchmark prompt
 
 # MCMC sampling configuration
 mcmc:
