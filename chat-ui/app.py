@@ -94,15 +94,15 @@ with st.sidebar:
     
     qwen_model = st.text_input(
         "Qwen Model Name",
-        value="Qwen/Qwen3-8B",
+        value="Qwen/Qwen2.5-7B",
         help="Model name on RunPod"
     )
     
     max_tokens = st.slider(
         "Max Tokens",
         min_value=50,
-        max_value=2048,
-        value=512,
+        max_value=4096,
+        value=4096,
         step=50,
         help="Maximum number of tokens to generate"
     )
@@ -137,7 +137,7 @@ with st.sidebar:
     
     **Sampling Methods:**
     - **Greedy**: Deterministic (temp=0)
-    - **MCMC**: Power sampling with Metropolis-Hastings
+    - **MCMC**: Power sampling with Calderhead (Parallelizable Metropolis-Hastings)
       - **Parallel** (default): Multiple proposals simultaneously (faster)
       - **Serial**: One proposal at a time (slower but simpler)
     - **Beam Search**: Best-first search across multiple candidates
@@ -331,7 +331,7 @@ if run and prompt.strip():
                             "Beam Width",
                             min_value=2,
                             max_value=10,
-                            value=4,
+                            value=5,
                             step=1,
                             help="Number of parallel beams to maintain",
                             key=f"beam_width_{idx}"
@@ -351,7 +351,7 @@ if run and prompt.strip():
                             "Proposal Temperature",
                             min_value=0.1,
                             max_value=2.0,
-                            value=0.7,
+                            value=0.1,
                             step=0.1,
                             help="Temperature for beam proposals",
                             key=f"beam_proposal_temp_{idx}"
@@ -360,8 +360,8 @@ if run and prompt.strip():
                         tokens_per_step = st.slider(
                             "Tokens per Step",
                             min_value=32,
-                            max_value=256,
-                            value=128,
+                            max_value=512,
+                            value=512,
                             step=32,
                             help="Tokens to generate per beam expansion",
                             key=f"tokens_per_step_{idx}"
@@ -370,6 +370,7 @@ if run and prompt.strip():
                         strategy = BeamSearchSampling(
                             alpha=alpha,
                             beam_width=beam_width,
+                            n_per_beam=7,
                             proposal_temperature=proposal_temperature,
                             tokens_per_step=tokens_per_step,
                             supports_n_param=True  # Most providers support this
@@ -472,7 +473,7 @@ if run and prompt.strip():
                     # Method description
                     descriptions = {
                         'Greedy Decoding': 'Selects the most probable token at each step, providing deterministic and focused outputs. Best for tasks requiring consistency.',
-                        'MCMC': 'Uses Metropolis-Hastings to sample from p^α distribution. Explores high-probability regions through iterative refinement with accept/reject steps.',
+                        'MCMC': 'Uses Calderhead (Parallelizable Metropolis-Hastings) to sample from p^α distribution. Explores high-probability regions through iterative refinement with accept/reject steps.',
                         'Beam Search': 'Maintains multiple parallel hypotheses and selects the best based on cumulative probability scores. Balances exploration and exploitation.',
                         'Temperature': 'Introduces controlled randomness by scaling logits. Higher temperature increases diversity; lower increases focus.'
                     }
