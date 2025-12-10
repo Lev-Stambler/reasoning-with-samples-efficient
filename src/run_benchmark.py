@@ -76,8 +76,6 @@ def print_results_table(metrics_list: list[BenchmarkMetrics]):
         "Avg Time (s)",
         "Total Tokens",
         "Avg Tokens/Problem",
-        "Total Cost ($)",
-        "Cost/Problem ($)",
         "Problems"
     ]
 
@@ -91,8 +89,6 @@ def print_results_table(metrics_list: list[BenchmarkMetrics]):
             f"{metrics.avg_time:.2f}",
             f"{metrics.total_tokens:,}",
             f"{metrics.avg_tokens_per_problem:.1f}",
-            f"${metrics.total_cost:.4f}",
-            f"${metrics.cost_per_problem:.4f}",
             metrics.num_problems
         ])
 
@@ -108,7 +104,7 @@ def print_results_table(metrics_list: list[BenchmarkMetrics]):
     if rows:
         best = rows[0]
         print(f"\n🏆 Best Overall: {best[2]} on {best[0]} with {best[1]}")
-        print(f"   Pass Rate: {best[3]} | Time: {best[4]}s | Cost: {best[8]}")
+        print(f"   Pass Rate: {best[3]} | Time: {best[4]}s")
 
         # Find best by benchmark
         benchmarks = set(m.benchmark_name for m in metrics_list)
@@ -153,11 +149,6 @@ def print_summary(metrics_list: list[BenchmarkMetrics]):
     print("\nToken Usage:")
     for metrics in sorted(metrics_list, key=lambda x: x.avg_tokens_per_problem):
         print(f"  {metrics.strategy_name:30s} {metrics.avg_tokens_per_problem:.0f} tokens avg per problem")
-
-    # Cost efficiency
-    print("\n💰 Cost Efficiency:")
-    for metrics in sorted(metrics_list, key=lambda x: x.cost_per_problem):
-        print(f"  {metrics.strategy_name:30s} ${metrics.cost_per_problem:.4f} per problem (${metrics.total_cost:.4f} total)")
 
     print("="*100 + "\n")
 
@@ -276,6 +267,8 @@ def main(cfg: DictConfig):
             model=model_name,
             supports_n_param=supports_n_param,
             seed=api_seed,
+            use_length_penalty=cfg.mcmc_parallel.use_length_penalty,
+            length_penalty=cfg.mcmc_parallel.length_penalty,
         ))
 
     if getattr(cfg.beam_search, 'enabled', False):

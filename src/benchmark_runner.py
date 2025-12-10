@@ -19,47 +19,6 @@ except ImportError:
     from src.async_openai_client import AsyncOpenAIClient, ChatCompletionResponse
 
 
-# Pricing per 1M tokens (input, output) in USD
-MODEL_PRICING = {
-    "grok-beta": (3.00, 15.00),  # High-end reasoning model (likely alias for base grok-4)
-    "grok-2-1212": (2.00, 10.00),
-    "grok-2-latest": (2.00, 10.00),
-    "grok-4-1-fast-non-reasoning": (0.20, 0.50),  # Fast, low-latency variant (10-20x cheaper!)
-    "grok-4-1-fast-reasoning": (0.20, 0.50),  # Fast reasoning variant with chain-of-thought
-    "gpt-4": (30.00, 60.00),
-    "gpt-4-turbo": (10.00, 30.00),
-    "gpt-3.5-turbo": (0.50, 1.50),
-    "claude-3-opus": (15.00, 75.00),
-    "claude-3-sonnet": (3.00, 15.00),
-    "claude-3-haiku": (0.25, 1.25),
-    # Default pricing for unknown models
-    "default": (2.00, 10.00),
-}
-
-
-def calculate_cost(model_name: str, prompt_tokens: int, completion_tokens: int) -> float:
-    """
-    Calculate cost in USD for API usage.
-    
-    Args:
-        model_name: Name of the model
-        prompt_tokens: Number of input tokens
-        completion_tokens: Number of output tokens
-    
-    Returns:
-        Cost in USD
-    """
-    # Get pricing or use default
-    pricing = MODEL_PRICING.get(model_name, MODEL_PRICING["default"])
-    input_price_per_million, output_price_per_million = pricing
-    
-    # Calculate cost
-    input_cost = (prompt_tokens / 1_000_000) * input_price_per_million
-    output_cost = (completion_tokens / 1_000_000) * output_price_per_million
-    
-    return input_cost + output_cost
-
-
 @dataclass
 class SamplingResult:
     """Results for a single problem with a specific sampling strategy."""
@@ -69,10 +28,9 @@ class SamplingResult:
     completion_tokens: int
     total_tokens: int
     time_seconds: float
-    cost_usd: float
     passed: bool = False
     metadata: Optional[Dict] = None  # For benchmark-specific data
-    
+
     def to_dict(self) -> Dict:
         """Convert to dictionary for JSON serialization."""
         return {
@@ -82,7 +40,6 @@ class SamplingResult:
             "completion_tokens": self.completion_tokens,
             "total_tokens": self.total_tokens,
             "time_seconds": self.time_seconds,
-            "cost_usd": self.cost_usd,
             "passed": self.passed,
             "metadata": self.metadata or {}
         }
@@ -98,8 +55,6 @@ class BenchmarkMetrics:
     avg_time: float
     total_tokens: int
     avg_tokens_per_problem: float
-    total_cost: float
-    cost_per_problem: float
     num_problems: int
 
 
@@ -163,6 +118,7 @@ class SamplingStrategy:
         For continuations, prefix is appended after the generation prompt.
         NO closing tag - model continues from exactly where prefix ends.
         """
+        return prompt + prefix
         # Auto-load tokenizer if model_name provided and no tokenizer set
         if self._tokenizer is None and model_name:
             self.set_tokenizer_from_model(model_name)
@@ -569,8 +525,8 @@ class ParallelMCMCSampling(SamplingStrategy):
         alpha: float = 1.67,
         mcmc_steps: int = 5,
         top_logprobs: int = 5,
-        proposal_temperature: float = 1.0, # Usually want higher temp for proposals to explore
-        block_size: int = 16, # Smaller blocks work better for MCMC
+        proposal_temperature: float = 1.0,  # Usually want higher temp for proposals to explore
+        block_size: int = 16,  # Smaller blocks work better for MCMC
         debug: bool = False,
         num_proposals: int = 4,
         max_concurrent: int = 100,
@@ -581,6 +537,8 @@ class ParallelMCMCSampling(SamplingStrategy):
         model: str = "gpt-4o-mini",
         supports_n_param: bool = True,  # Whether API supports n parameter for batching
         seed: int = None,  # Random seed for API reproducibility
+        use_length_penalty: bool = False,  # Whether to apply length normalization
+        length_penalty: float = 0.6,  # Length penalty exponent (like beam search)
     ):
         name = f"ParallelMCMC(α={alpha},steps={mcmc_steps},B={block_size},N={num_proposals})"
         super().__init__(name, seed=seed)
@@ -598,6 +556,8 @@ class ParallelMCMCSampling(SamplingStrategy):
         self.base_url = base_url
         self.model = model
         self.supports_n_param = supports_n_param
+        self.use_length_penalty = use_length_penalty
+        self.length_penalty = length_penalty
 
     def _extract_logprobs_completion(self, choice: Any) -> Tuple[List[str], List[float]]:
         """
@@ -758,9 +718,19 @@ class ParallelMCMCSampling(SamplingStrategy):
         N = len(proposals)
         A = np.zeros((N, N))
 
-        # Sum log probs for each proposal (use all tokens)
-        log_p_list = [sum(p.log_p) for p in proposals]
-        log_target_list = [sum(p.log_target) for p in proposals]
+        # Sum log probs for each proposal, with optional length penalty
+        log_p_list = []
+        log_target_list = []
+        for p in proposals:
+            lp = sum(p.log_p)
+            lt = sum(p.log_target)
+            if self.use_length_penalty and len(p.tokens) > 0:
+                # Normalize by length^penalty (like beam search)
+                length_norm = len(p.tokens) ** self.length_penalty
+                lp = lp / length_norm
+                lt = lt / length_norm
+            log_p_list.append(lp)
+            log_target_list.append(lt)
 
         # Compute transition matrix using MH ratio (matching serial MCMC)
         for i in range(N):
@@ -889,6 +859,7 @@ class ParallelMCMCSampling(SamplingStrategy):
         if self.debug:
             print(f"[ParallelMCMC] Final: {len(tokens_cur)} tokens, acceptance={self._last_acceptance_ratio:.1%}")
 
+        print("AAAAAAAAAAAAA", "".join(tokens_cur))
         return "".join(tokens_cur), total_prompt_tokens, total_completion_tokens
 
     async def _run_with_async_client(self, prompt: str, max_tokens: int) -> Tuple[str, int, int]:
@@ -1178,7 +1149,9 @@ class BeamSearchSampling(SamplingStrategy):
                 if block_num == 0:
                     candidate_beams.append(Beam(text, tokens, log_p, log_target, finished))
                 else:
-                    candidate_beams.append(beam.extend(text, tokens, log_p, log_target, finished))
+                    tmp_beam = beam.extend(text, tokens, log_p, log_target, finished)
+                    print(f'tmp_beam: {tmp_beam.text}')
+                    candidate_beams.append(tmp_beam)
 
         return candidate_beams, total_pt, total_ct
 
@@ -1298,6 +1271,7 @@ class BeamSearchSampling(SamplingStrategy):
 
         # Sort by score and take best
         all_beams.sort(key=lambda x: x[0], reverse=True)
+        print(f'{[score for score, x in all_beams]}')
         best_score, best_beam = all_beams[0]
 
         # Store metadata for diagnostics
@@ -1309,6 +1283,7 @@ class BeamSearchSampling(SamplingStrategy):
             print(f"[BeamSearch] Final: {len(best_beam)} tokens, score={best_score:.4f}")
             print(f"[BeamSearch] Text: {best_beam.text[:200]}..." if len(best_beam.text) > 200 else f"[BeamSearch] Text: {best_beam.text}")
 
+        print(f'best beam text: {best_beam.text}')
         return best_beam.text, total_prompt_tokens, total_completion_tokens
 
     async def _run_with_client(self, api_key: str, base_url: str, model: str, prompt: str, max_tokens: int):
@@ -1601,10 +1576,7 @@ class BenchmarkRunner:
         
         # Check correctness using benchmark
         passed, result_msg = self.benchmark.check_correctness(problem, extracted_completion)
-        
-        # Calculate cost
-        cost = calculate_cost(self.model_name, prompt_tokens, completion_tokens)
-        
+
         return SamplingResult(
             task_id=task_id,
             completion=extracted_completion,
@@ -1612,7 +1584,6 @@ class BenchmarkRunner:
             completion_tokens=completion_tokens,
             total_tokens=prompt_tokens + completion_tokens,
             time_seconds=elapsed_time,
-            cost_usd=cost,
             passed=passed,
             metadata={"result_message": result_msg}
         )
@@ -1658,7 +1629,7 @@ class BenchmarkRunner:
                     predictions_by_strategy[strategy.name].append(prediction)
                     
                     status = "✓ PASS" if result.passed else "✗ FAIL"
-                    print(f"{status} ({result.time_seconds:.2f}s, {result.total_tokens} tokens, ${result.cost_usd:.4f})")
+                    print(f"{status} ({result.time_seconds:.2f}s, {result.total_tokens} tokens)")
                     if not result.passed and result.metadata:
                         print(f"    {result.metadata.get('result_message', '')}")
                 except Exception as e:
@@ -1674,13 +1645,11 @@ class BenchmarkRunner:
         for strategy_name, results in results_by_strategy.items():
             if not results:
                 continue
-            
-            total_cost = sum(r.cost_usd for r in results)
-            
+
             # Calculate pass rate from results
             num_passed = sum(1 for r in results if r.passed)
             pass_rate = (num_passed / len(results)) * 100.0 if results else 0.0
-            
+
             metrics[strategy_name] = BenchmarkMetrics(
                 model_name=self.model_name,
                 strategy_name=strategy_name,
@@ -1689,8 +1658,6 @@ class BenchmarkRunner:
                 avg_time=sum(r.time_seconds for r in results) / len(results),
                 total_tokens=sum(r.total_tokens for r in results),
                 avg_tokens_per_problem=sum(r.total_tokens for r in results) / len(results),
-                total_cost=total_cost,
-                cost_per_problem=total_cost / len(results),
                 num_problems=len(results)
             )
         
