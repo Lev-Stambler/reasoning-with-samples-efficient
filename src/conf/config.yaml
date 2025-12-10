@@ -56,12 +56,13 @@ model:
 benchmark:
   name: humaneval # Options: humaneval, swebench, swebench-verified, gsm8k, gsm8k-train, mmlu, mmlu-stem, mmlu-humanities, mmlu-social, arcagi2, arcagi2-train
   num_problems: 30
-  max_tokens: 3_072 # Max tokens for final completion (applied everywhere)
+  max_tokens: 4_096 # Max tokens for final completion (applied everywhere)
   seed: 42 # Random seed for reproducibility (null to disable)
 
 # Prompt customization
 prompt:
   prefix: "" # Text to add before the benchmark prompt
+  # suffix: "\n\nThink deeply and show your work, step by step" # Text to add after the benchmark prompt
   suffix: ""
 
 # MCMC sampling configuration (serial, single proposal per step)
@@ -79,13 +80,14 @@ mcmc:
 # Based on: "A general construction for parallelizing Metropolis-Hastings algorithms" (Calderhead 2014, PNAS)
 mcmc_parallel:
   enabled: false
-  alpha: 5.0 # Power factor for target distribution pi(x) = p(x)^alpha
-  steps: 2 # MCMC refinement steps per block (1 is typical with N parallel proposals)
-  top_logprobs: 15 # Number of top log probabilities to retrieve
-  proposal_temperature: 0.2 # Temperature for proposal distribution, should be alpha^(-1)
-  block_size: 192 # Block size B for block-wise generation (match mcmc.block_size)
+  alpha: 4.0 # Power factor for target distribution pi(x) = p(x)^alpha
+  steps: 1 # MCMC refinement steps per block (1 is typical with N parallel proposals)
+  top_logprobs: 10 # Number of top log probabilities to retrieve
+  proposal_temperature: 0.1 # Temperature for proposal distribution, should be alpha^(-1)
+  block_size: 256 # Block size B for block-wise generation (match mcmc.block_size)
   debug: true # Print debug info
-  length_normalize: false # If true, normalize log_target by length (removes length penalty)
+  use_length_penalty: false # Whether to apply length normalization
+  length_penalty: 0.6 # Length penalty exponent (like beam search)
   # Parallel-specific parameters:
   num_proposals: 10 # N proposals per MCMC step (includes current state)
   max_concurrent: 100 # Max concurrent API requests
