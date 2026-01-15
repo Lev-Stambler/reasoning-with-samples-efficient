@@ -8,13 +8,7 @@ defaults:
 # Model configuration
 # Provider: "xai", "ollama", "vllm", or "runpod"
 model:
-  provider: vllm  # Options: xai, ollama, vllm, runpod
-
-  # X.AI settings (used when provider: xai)
-  # Requires XAI_API_KEY environment variable
-  xai:
-    name: grok-3-mini
-    base_url: https://api.x.ai/v1
+  provider: vllm # Options: xai, ollama, vllm, runpod
 
   # Ollama settings (used when provider: ollama)
   # Install: curl -fsSL https://ollama.com/install.sh | sh
@@ -27,21 +21,11 @@ model:
 
   # vLLM settings (used when provider: vllm)
   # Install: pip install vllm
-  # Start server: vllm serve HuggingFaceTB/SmolLM2-1.7B-Instruct --port 8000
-  # vLLM provides: real logprobs, n parameter support, true GPU batching
-  # vllm:
-  #   name: HuggingFaceTB/SmolLM2-1.7B-Instruct
-  #   base_url: http://localhost:8000/v1
-
-  # vLLM settings (used when provider: vllm)
-  # Install: pip install vllm
   # Start server: vllm serve Qwen/Qwen3-8B --port 8000
   # vLLM provides: real logprobs, n parameter support, true GPU batching
   vllm:
     # name: Qwen/Qwen3-8B
     name: Qwen/Qwen2.5-7B
-    # name: HuggingFaceTB/SmolLM2-1.7B-Instruct
-    # name: HuggingFaceTB/SmolLM2-135M-Instruct
     base_url: http://localhost:8000/v1
 
   # RunPod settings (used when provider: runpod)
@@ -50,7 +34,7 @@ model:
   # RunPod typically runs vLLM backend with OpenAI-compatible API
   runpod:
     name: Qwen/Qwen3-8B
-    base_url: null  # Set via RUNPOD_ENDPOINT env var
+    base_url: null # Set via RUNPOD_ENDPOINT env var
 
 # Benchmark configuration
 benchmark:

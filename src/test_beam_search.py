@@ -6,7 +6,7 @@ Run with: uv run --python 3.12 python test_beam_search.py
 """
 import os
 from dotenv import load_dotenv
-from benchmark_runner import BeamSearchSampling
+from strategies import BeamSearchSampling
 from openai import OpenAI
 
 load_dotenv()

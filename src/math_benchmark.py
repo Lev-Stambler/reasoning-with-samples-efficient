@@ -9,7 +9,7 @@ import json
 import os
 import re
 import sys
-from benchmark_runner import Benchmark
+from benchmarks import Benchmark
 from typing import Dict
 
 # Add parent directory to path for importing grader utilities
