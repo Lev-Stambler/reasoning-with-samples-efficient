@@ -9,7 +9,7 @@ To add a new benchmark:
 Example: SWEBench implementation
 """
 
-from benchmarks import Benchmark
+from .base import Benchmark
 from typing import Dict
 from datasets import load_dataset
 

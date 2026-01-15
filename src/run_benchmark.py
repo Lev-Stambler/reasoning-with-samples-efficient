@@ -35,19 +35,20 @@ from strategies import (
 )
 from benchmarks import (
     Benchmark,
-    HumanEvalBenchmark
-)
-from swebench_benchmark import SWEBenchLiteBenchmark, SWEBenchVerifiedBenchmark
-from gsm8k_benchmark import GSM8KBenchmark, GSM8KTrainBenchmark
-from mmlu_benchmark import (
+    HumanEvalBenchmark,
+    SWEBenchLiteBenchmark,
+    SWEBenchVerifiedBenchmark,
+    GSM8KBenchmark,
+    GSM8KTrainBenchmark,
     MMLUBenchmark,
     MMLUSTEMBenchmark,
     MMLUHumanitiesBenchmark,
-    MMLUSocialSciencesBenchmark
+    MMLUSocialSciencesBenchmark,
+    ARCAGI2Benchmark,
+    ARCAGI2TrainingBenchmark,
+    MATHBenchmark,
+    GPQABenchmark
 )
-from arcagi2_benchmark import ARCAGI2Benchmark, ARCAGI2TrainingBenchmark
-from math_benchmark import MATHBenchmark
-from gpqa_benchmark import GPQABenchmark
 
 # Load environment variables
 load_dotenv()
