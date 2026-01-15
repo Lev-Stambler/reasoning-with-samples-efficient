@@ -9,7 +9,7 @@ For production use, consider using the official SWE-bench evaluation harness:
 https://github.com/princeton-nlp/SWE-bench
 """
 
-from benchmark_runner import Benchmark
+from benchmarks import Benchmark
 from typing import Dict
 from datasets import load_dataset
 import re

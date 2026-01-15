@@ -7,7 +7,7 @@ import os
 import time
 from dotenv import load_dotenv
 from openai import OpenAI
-from benchmark_runner import BeamSearchSampling
+from strategies import BeamSearchSampling
 
 # Load environment variables
 load_dotenv()

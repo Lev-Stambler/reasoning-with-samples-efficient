@@ -38,7 +38,7 @@ class MockAsyncOpenAI:
 
 # Import the beam search class
 sys.path.insert(0, '/Users/nisargdesai/Documents/xai-hackathon/reasoning-with-samples-efficient/src')
-from benchmark_runner import BeamSearchSampling
+from strategies import BeamSearchSampling
 
 def test_async_methods_exist():
     """Test that async methods are defined correctly."""

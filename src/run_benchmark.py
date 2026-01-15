@@ -21,16 +21,21 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 from dotenv import load_dotenv
 from tabulate import tabulate
-from benchmark_runner import (
-    BenchmarkRunner,
-    Benchmark,
-    HumanEvalBenchmark,
+from openai import OpenAI
+from dataclasses import asdict
+from strategies import (
     GreedySampling,
     MCMCSampling,
     ParallelMCMCSampling,
     BeamSearchSampling,
     TemperatureSampling,
-    BenchmarkMetrics
+    BenchmarkMetrics,
+    SamplingResult,
+    SamplingStrategy
+)
+from benchmarks import (
+    Benchmark,
+    HumanEvalBenchmark
 )
 from swebench_benchmark import SWEBenchLiteBenchmark, SWEBenchVerifiedBenchmark
 from gsm8k_benchmark import GSM8KBenchmark, GSM8KTrainBenchmark
@@ -46,6 +51,199 @@ from gpqa_benchmark import GPQABenchmark
 
 # Load environment variables
 load_dotenv()
+
+
+class BenchmarkRunner:
+    """Runner for comparing different sampling strategies on any benchmark."""
+    
+    def __init__(
+        self,
+        benchmark: Benchmark,
+        model_name: str,
+        api_key: str,
+        base_url: str = "https://api.x.ai/v1",
+        output_dir: str = "predictions",
+        prompt_prefix: str = "",
+        prompt_suffix: str = "",
+        suffix_overrides: dict[str, str] | None = None  # Strategy name -> suffix override
+    ):
+        self.benchmark = benchmark
+        self.model_name = model_name
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        self.client.default_model = model_name
+        self.results: list[SamplingResult] = []
+        self.output_dir = output_dir
+        self.prompt_prefix = prompt_prefix
+        self.prompt_suffix = prompt_suffix
+        self.suffix_overrides = suffix_overrides or {}
+
+        # Create output directory
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Auto-load tokenizer for MCMC/BeamSearch strategies
+        SamplingStrategy.set_tokenizer_from_model(model_name)
+    
+    def run_single_problem(
+        self,
+        problem: dict,
+        strategy: SamplingStrategy,
+        max_tokens: int = 512
+    ) -> SamplingResult:
+        """Run a single problem with a given sampling strategy."""
+        # Get task ID (benchmark-specific)
+        task_id = problem.get("task_id") or problem.get("id") or str(problem)
+
+        # Format prompt using benchmark
+        prompt = self.benchmark.format_prompt(problem)
+
+        # Apply custom prefix/suffix if provided
+        # Check for strategy-specific suffix override
+        suffix = self.suffix_overrides.get(strategy.name, self.prompt_suffix)
+        if self.prompt_prefix:
+            prompt = self.prompt_prefix + prompt
+        if suffix:
+            prompt = prompt + suffix
+        
+        # Generate completion
+        start_time = time.time()
+        completion, prompt_tokens, completion_tokens = strategy.generate(
+            self.client, prompt, max_tokens
+        )
+        elapsed_time = time.time() - start_time
+        
+        # Extract completion using benchmark
+        extracted_completion = self.benchmark.extract_completion(completion, problem)
+        
+        # Check correctness using benchmark
+        passed, result_msg = self.benchmark.check_correctness(problem, extracted_completion)
+
+        return SamplingResult(
+            task_id=task_id,
+            completion=extracted_completion,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+            time_seconds=elapsed_time,
+            passed=passed,
+            metadata={"result_message": result_msg}
+        )
+    
+    def run_benchmark(
+        self,
+        strategies: list[SamplingStrategy],
+        num_problems: int = 10,
+        max_tokens: int = 512,
+        run_id: str = None
+    ) -> dict[str, BenchmarkMetrics]:
+        """
+        Run benchmark for multiple strategies.
+        Generates prediction files for official evaluation.
+        Returns: Dict mapping strategy name to metrics.
+        """
+        # Load benchmark dataset
+        print(f"Loading {self.benchmark.name()} dataset...")
+        self.benchmark.load_dataset()
+        
+        results_by_strategy: dict[str, list[SamplingResult]] = {s.name: [] for s in strategies}
+        predictions_by_strategy: dict[str, list[dict]] = {s.name: [] for s in strategies}
+        
+        print(f"\nRunning benchmark on {num_problems} {self.benchmark.name()} problems...")
+        print(f"Model: {self.model_name}")
+        print(f"Strategies: {[s.name for s in strategies]}\n")
+        
+        num_problems = min(num_problems, self.benchmark.get_num_problems())
+        
+        for i in range(num_problems):
+            problem = self.benchmark.get_problem(i)
+            task_id = problem.get("task_id") or problem.get("instance_id") or problem.get("id") or f"Problem {i+1}"
+            print(f"\nProblem {i+1}/{num_problems}: {task_id}")
+            
+            for strategy in strategies:
+                print(f"  Testing {strategy.name}...", end=" ")
+                try:
+                    result = self.run_single_problem(problem, strategy, max_tokens)
+                    results_by_strategy[strategy.name].append(result)
+                    
+                    # Format prediction for official evaluator
+                    prediction = self.benchmark.format_prediction(problem, result.completion)
+                    predictions_by_strategy[strategy.name].append(prediction)
+                    
+                    status = "✓ PASS" if result.passed else "✗ FAIL"
+                    print(f"{status} ({result.time_seconds:.2f}s, {result.total_tokens} tokens)")
+                    if not result.passed and result.metadata:
+                        print(f"    {result.metadata.get('result_message', '')}")
+                except Exception as e:
+                    print(f"✗ ERROR: {str(e)[:50]}")
+        
+        # Save prediction files
+        for strategy_name, predictions in predictions_by_strategy.items():
+            if predictions:
+                self.save_predictions(predictions, strategy_name, run_id)
+        
+        # Aggregate metrics
+        metrics = {}
+        for strategy_name, results in results_by_strategy.items():
+            if not results:
+                continue
+
+            # Calculate pass rate from results
+            num_passed = sum(1 for r in results if r.passed)
+            pass_rate = (num_passed / len(results)) * 100.0 if results else 0.0
+
+            metrics[strategy_name] = BenchmarkMetrics(
+                model_name=self.model_name,
+                strategy_name=strategy_name,
+                benchmark_name=self.benchmark.name(),
+                pass_rate=pass_rate,
+                avg_time=sum(r.time_seconds for r in results) / len(results),
+                total_tokens=sum(r.total_tokens for r in results),
+                avg_tokens_per_problem=sum(r.total_tokens for r in results) / len(results),
+                num_problems=len(results)
+            )
+        
+        return metrics
+    
+    def save_predictions(self, predictions: list[dict], strategy_name: str, run_id: str = None):
+        """Save predictions to file for official evaluation."""
+        # Clean strategy name for filename
+        safe_strategy = strategy_name.replace("(", "_").replace(")", "").replace("=", "").replace(",", "_").replace(" ", "")
+        safe_model = self.model_name.replace("/", "_").replace("-", "_")
+        safe_benchmark = self.benchmark.name().replace("-", "_").lower()
+        
+        # Create filename
+        if run_id:
+            filename = f"{safe_benchmark}_{safe_model}_{safe_strategy}_{run_id}.jsonl"
+        else:
+            filename = f"{safe_benchmark}_{safe_model}_{safe_strategy}.jsonl"
+        
+        filepath = os.path.join(self.output_dir, filename)
+        
+        # Write JSONL file
+        with open(filepath, 'w') as f:
+            for pred in predictions:
+                f.write(json.dumps(pred) + '\n')
+        
+        print(f"\n📁 Saved predictions to: {filepath}")
+        print(f"   Total predictions: {len(predictions)}")
+        
+        # Print evaluation command
+        if self.benchmark.name() == "HumanEval":
+            print(f"\n   To evaluate, run:")
+            print(f"   evaluate_functional_correctness {filepath}")
+        elif "SWE-bench" in self.benchmark.name():
+            print(f"\n   To evaluate, run:")
+            print(f"   python -m swebench.harness.run_evaluation \\")
+            print(f"     --predictions_path {filepath} \\")
+            print(f"     --swe_bench_tasks <path-to-tasks> \\")
+            print(f"     --log_dir logs/")
+        
+        return filepath
+    
+    def save_results(self, filename: str):
+        """Save detailed results to JSON."""
+        with open(filename, 'w') as f:
+            json.dump([asdict(r) for r in self.results], f, indent=2)
+
 
 # Registry of available benchmarks
 BENCHMARK_REGISTRY = {
