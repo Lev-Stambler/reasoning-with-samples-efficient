@@ -103,7 +103,6 @@ class SamplingStrategy:
         except Exception as e:
             print(f"[SamplingStrategy] Warning: Could not load tokenizer for {model_name}: {e}")
             print(f"[SamplingStrategy] You may need to manually call SamplingStrategy.set_tokenizer()")
-            raise
 
     def __init__(self, name: str, seed: int = None):
         self.name = name
@@ -248,10 +247,15 @@ class MCMCSampling(SamplingStrategy):
     - Accept/reject using MH ratio on the suffix
 
     For α=4: proposals with higher log probability are 3x more likely to be accepted.
+
+    Note: The scorer parameter is accepted for API compatibility but MCMC currently
+    uses per-token log_target for the MH ratio. For block-level scoring with custom
+    scorers, use ParallelMCMCSampling instead.
     """
 
     def __init__(
         self,
+        scorer: "Scorer" = None,  # Accepted for API compatibility
         alpha: float = 4.0,
         mcmc_steps: int = 10,
         top_logprobs: int = 5,
@@ -274,6 +278,9 @@ class MCMCSampling(SamplingStrategy):
         self.restrict_to_last_n = restrict_to_last_n
         self.block_size = block_size
         self.debug = debug
+
+        # Store scorer for API compatibility (not used in per-token MH ratio)
+        self.scorer = scorer
 
     def _extract_logprobs_completion(self, response) -> tuple[list[str], list[float], list[float]]:
         """
@@ -498,9 +505,10 @@ class Proposal:
     """A proposal for parallel MCMC."""
     tokens: List[str]
     log_p: List[float]
-    log_target: List[float]
+    log_target: List[float]  # Kept for backward compatibility
     prompt_tokens: int
     completion_tokens: int
+    score: float = 0.0  # Scorer-computed score (for new scorer integration)
 
 class ParallelMCMCSampling(SamplingStrategy):
     """
@@ -518,11 +526,14 @@ class ParallelMCMCSampling(SamplingStrategy):
     Uses Calderhead's parallel structure: generate N proposals, build transition
     matrix, sample next state. This enables parallel generation while maintaining
     correct MH dynamics.
+
+    When using a custom scorer, the scorer's score replaces α·log P(x) in the MH ratio.
     """
 
     def __init__(
         self,
-        alpha: float = 1.67,
+        scorer: "Scorer" = None,  # Pluggable scorer (default: PowerScorer)
+        alpha: float = 1.67,  # Used only if scorer is None (backward compat)
         mcmc_steps: int = 5,
         top_logprobs: int = 5,
         proposal_temperature: float = 1.0,  # Usually want higher temp for proposals to explore
@@ -558,6 +569,17 @@ class ParallelMCMCSampling(SamplingStrategy):
         self.supports_n_param = supports_n_param
         self.use_length_penalty = use_length_penalty
         self.length_penalty = length_penalty
+
+        # Create default PowerScorer if none provided (backward compatible)
+        if scorer is None:
+            from scorers import PowerScorer
+            self.scorer = PowerScorer(
+                alpha=alpha,
+                use_length_penalty=use_length_penalty,
+                length_penalty=length_penalty,
+            )
+        else:
+            self.scorer = scorer
 
     def _extract_logprobs_completion(self, choice: Any) -> Tuple[List[str], List[float]]:
         """
@@ -635,6 +657,7 @@ class ParallelMCMCSampling(SamplingStrategy):
         When supports_n_param=False: Make separate parallel API calls.
 
         Uses completions API for TRUE continuation.
+        After generating proposals, scores them using the configured scorer.
         """
         proposals = [current_proposal]
         total_pt = 0
@@ -694,7 +717,34 @@ class ParallelMCMCSampling(SamplingStrategy):
                 total_pt += resp.usage.prompt_tokens
                 total_ct += resp.usage.completion_tokens
 
-        return proposals, total_pt, total_ct
+        # Score all proposals using the scorer (in parallel)
+        async def score_proposal(idx: int, p: Proposal) -> Proposal:
+            """Score a proposal using the scorer."""
+            text = "".join(p.tokens)
+            score_result = await self.scorer.score_block(
+                client=client,
+                prompt=prompt,
+                prefix=prefix,
+                block_text=text,
+                block_tokens=p.tokens,
+                block_log_p=p.log_p,
+                sequence_id=idx,
+            )
+            # Update proposal with score
+            return Proposal(
+                tokens=p.tokens,
+                log_p=p.log_p,
+                log_target=p.log_target,
+                prompt_tokens=p.prompt_tokens,
+                completion_tokens=p.completion_tokens,
+                score=score_result.score,
+            )
+
+        # Run all scoring in parallel
+        scoring_tasks = [score_proposal(idx, p) for idx, p in enumerate(proposals)]
+        scored_proposals = await asyncio.gather(*scoring_tasks)
+
+        return list(scored_proposals), total_pt, total_ct
 
     def _compute_transition_matrix(self, proposals: List[Proposal]) -> np.ndarray:
         """
@@ -706,10 +756,10 @@ class ParallelMCMCSampling(SamplingStrategy):
 
         With independent proposal q(x) = p(x), in log space:
 
-        log R(i,j) = [α·log P(j) + log P(i)] - [α·log P(i) + log P(j)]
-                   = log_target_j + log_p_i - log_target_i - log_p_j
+        log R(i,j) = [score_j + log_p_i] - [score_i + log_p_j]
 
-        This matches the serial MCMC's acceptance ratio formula.
+        Where score is computed by the scorer (defaults to α·log P(x)).
+        Note: Length penalty applies ONLY to target distribution (score), not proposal (log_p).
 
         Transition probabilities (Calderhead structure):
         A(i,j) = (1/N) * min(1, R(i,j))  for i ≠ j
@@ -718,27 +768,33 @@ class ParallelMCMCSampling(SamplingStrategy):
         N = len(proposals)
         A = np.zeros((N, N))
 
-        # Sum log probs for each proposal, with optional length penalty
+        # Get scores and log_p for each proposal
+        score_list = []
         log_p_list = []
-        log_target_list = []
         for p in proposals:
-            lp = sum(p.log_p)
-            lt = sum(p.log_target)
-            if self.use_length_penalty and len(p.tokens) > 0:
-                # Normalize by length^penalty (like beam search)
-                length_norm = len(p.tokens) ** self.length_penalty
-                lp = lp / length_norm
-                lt = lt / length_norm
-            log_p_list.append(lp)
-            log_target_list.append(lt)
+            # Use pre-computed scorer score if available, else fall back to log_target sum
+            if p.score != 0.0:
+                # Scorer-computed score (already handles length penalty correctly)
+                score_list.append(p.score)
+            else:
+                # Backward compatibility: use log_target sum with optional length penalty
+                lt = sum(p.log_target)
+                if self.use_length_penalty and len(p.tokens) > 0:
+                    length_norm = len(p.tokens) ** self.length_penalty
+                    lt = lt / length_norm
+                score_list.append(lt)
 
-        # Compute transition matrix using MH ratio (matching serial MCMC)
+            # Proposal distribution log prob: sum(log_p) WITHOUT length penalty
+            # The proposal comes from base model p(x), not a length-normalized distribution
+            log_p_list.append(sum(p.log_p))
+
+        # Compute transition matrix using MH ratio
         for i in range(N):
             for j in range(N):
                 if i != j:
-                    # log R(i→j) = log_target_j + log_p_i - log_target_i - log_p_j
-                    log_R = (log_target_list[j] + log_p_list[i]
-                             - log_target_list[i] - log_p_list[j])
+                    # log R(i→j) = score_j + log_p_i - score_i - log_p_j
+                    log_R = (score_list[j] + log_p_list[i]
+                             - score_list[i] - log_p_list[j])
                     log_R = np.clip(log_R, -50, 50)
                     A[i, j] = (1.0 / N) * min(1.0, np.exp(log_R))
 
@@ -882,40 +938,41 @@ class Beam:
     text: str = ""
     tokens: list[str] = field(default_factory=list)
     log_p: list[float] = field(default_factory=list)
-    log_target: list[float] = field(default_factory=list)
     finished: bool = False
+    # Scoring fields (computed externally by Scorer)
+    block_scores: list[float] = field(default_factory=list)
+    cumulative_score: float = 0.0
+    sequence_id: int = 0
 
     def __len__(self) -> int:
         """Return number of tokens."""
         return len(self.tokens)
 
     def extend(self, text: str, tokens: list[str], log_p: list[float],
-               log_target: list[float], finished: bool) -> "Beam":
+               block_score: float, cumulative_score: float, finished: bool) -> "Beam":
         """Create a new beam by appending a continuation."""
         return Beam(
             text=self.text + text,
             tokens=self.tokens + tokens,
             log_p=self.log_p + log_p,
-            log_target=self.log_target + log_target,
             finished=finished,
+            block_scores=self.block_scores + [block_score],
+            cumulative_score=cumulative_score,
+            sequence_id=self.sequence_id,
         )
 
-    def score(self, use_length_penalty: bool = False,
-              length_penalty: float = 0.6) -> float:
-        """Calculate beam score with optional length normalization."""
+    def score(self) -> float:
+        """Return the cumulative score (computed externally by scorer)."""
         if len(self) == 0:
             return float('-inf')
-        cumulative = sum(self.log_target)
-        if use_length_penalty:
-            return cumulative / (len(self) ** length_penalty)
-        return cumulative
+        return self.cumulative_score
 
 
 class BeamSearchSampling(SamplingStrategy):
     """
     Beam search with power sampling via API.
 
-    Maintains beam_width parallel hypotheses, scores using p^α logprobs,
+    Maintains beam_width parallel hypotheses, scores using a pluggable Scorer,
     and uses length normalization to prevent short-sequence bias.
 
     Unlike MCMC which uses accept/reject, beam search deterministically
@@ -924,7 +981,8 @@ class BeamSearchSampling(SamplingStrategy):
 
     def __init__(
         self,
-        alpha: float = 4.0,
+        scorer: "Scorer" = None,  # Pluggable scorer (default: PowerScorer)
+        alpha: float = 4.0,  # Used only if scorer is None (backward compat)
         beam_width: int = 2,
         n_per_beam: int = 2,  # Generate n continuations per beam
         tokens_per_step: int = 192,  # Generate this many tokens per expansion
@@ -953,10 +1011,21 @@ class BeamSearchSampling(SamplingStrategy):
         self.max_concurrent = max_concurrent
         self.timeout = timeout
 
-    def _extract_logprobs_completion(self, choice) -> tuple[list[str], list[float], list[float]]:
+        # Create default PowerScorer if none provided (backward compatible)
+        if scorer is None:
+            from scorers import PowerScorer
+            self.scorer = PowerScorer(
+                alpha=alpha,
+                use_length_penalty=use_length_penalty,
+                length_penalty=length_penalty,
+            )
+        else:
+            self.scorer = scorer
+
+    def _extract_logprobs_completion(self, choice) -> tuple[list[str], list[float]]:
         """Extract tokens and logprobs from completions API choice."""
         if not choice.logprobs:
-            return [], [], []
+            return [], []
 
         tokens = choice.logprobs.tokens
         log_p_raw = choice.logprobs.token_logprobs
@@ -964,13 +1033,12 @@ class BeamSearchSampling(SamplingStrategy):
         # Filter out None values (first token often has None logprob)
         valid = [(t, lp) for t, lp in zip(tokens, log_p_raw) if lp is not None]
         if not valid:
-            return [], [], []
+            return [], []
 
         tokens, log_p = zip(*valid)
         tokens, log_p = list(tokens), list(log_p)
-        log_target = [self.alpha * lp for lp in log_p]
 
-        return tokens, log_p, log_target
+        return tokens, log_p
 
     def _sample_full(self, client: OpenAI, prompt: str, max_tokens: int):
         """Generate a full sample from base model using completions API."""
@@ -985,11 +1053,11 @@ class BeamSearchSampling(SamplingStrategy):
         )
 
         text = response.choices[0].text
-        tokens, log_p, log_target = self._extract_logprobs_completion(response.choices[0])
+        tokens, log_p = self._extract_logprobs_completion(response.choices[0])
         finished_naturally = response.choices[0].finish_reason == "stop"
 
         return (
-            text, tokens, log_p, log_target,
+            text, tokens, log_p,
             response.usage.prompt_tokens,
             response.usage.completion_tokens,
             finished_naturally
@@ -1008,11 +1076,11 @@ class BeamSearchSampling(SamplingStrategy):
         )
 
         continuation = response.choices[0].text
-        tokens, log_p, log_target = self._extract_logprobs_completion(response.choices[0])
+        tokens, log_p = self._extract_logprobs_completion(response.choices[0])
         finished_naturally = response.choices[0].finish_reason == "stop"
 
         return (
-            continuation, tokens, log_p, log_target,
+            continuation, tokens, log_p,
             response.usage.prompt_tokens,
             response.usage.completion_tokens,
             finished_naturally
@@ -1035,9 +1103,9 @@ class BeamSearchSampling(SamplingStrategy):
         results = []
         for choice in response.choices:
             continuation = choice.text
-            tokens, log_p, log_target = self._extract_logprobs_completion(choice)
+            tokens, log_p = self._extract_logprobs_completion(choice)
             finished_naturally = choice.finish_reason == "stop"
-            results.append((continuation, tokens, log_p, log_target, finished_naturally))
+            results.append((continuation, tokens, log_p, finished_naturally))
 
         # Token usage is for ALL n samples combined
         return results, response.usage.prompt_tokens, response.usage.completion_tokens
@@ -1056,11 +1124,11 @@ class BeamSearchSampling(SamplingStrategy):
 
         choice = response.choices[0]
         continuation = choice.text
-        tokens, log_p, log_target = self._extract_logprobs_completion(choice)
+        tokens, log_p = self._extract_logprobs_completion(choice)
         finished_naturally = choice.finish_reason == "stop"
 
         return (
-            continuation, tokens, log_p, log_target, finished_naturally,
+            continuation, tokens, log_p, finished_naturally,
             response.usage.prompt_tokens, response.usage.completion_tokens
         )
 
@@ -1080,9 +1148,9 @@ class BeamSearchSampling(SamplingStrategy):
         results = []
         for choice in response.choices:
             continuation = choice.text
-            tokens, log_p, log_target = self._extract_logprobs_completion(choice)
+            tokens, log_p = self._extract_logprobs_completion(choice)
             finished_naturally = choice.finish_reason == "stop"
-            results.append((continuation, tokens, log_p, log_target, finished_naturally))
+            results.append((continuation, tokens, log_p, finished_naturally))
 
         return results, response.usage.prompt_tokens, response.usage.completion_tokens
 
@@ -1092,16 +1160,19 @@ class BeamSearchSampling(SamplingStrategy):
 
         When supports_n_param=True (vLLM): Use n parameter for efficient GPU batching.
         When supports_n_param=False: Make separate parallel API calls.
+
+        Scoring is done via self.scorer which may make additional API calls.
         """
-        candidate_beams: list[Beam] = []
         total_pt = 0
         total_ct = 0
 
+        # Collect all continuations first
+        continuations_data = []  # List of (parent_beam, text, tokens, log_p, finished)
+
         if self.supports_n_param:
             # vLLM path: Use n parameter for efficient batched inference
-            # Make beam_width parallel calls, each with n=n_per_beam
             tasks = []
-            beam_refs: list[Beam] = []  # Track which beam each task belongs to
+            beam_refs: list[Beam] = []
 
             for beam in active_beams:
                 prefix = "" if (block_num == 0 and not beam.text) else beam.text
@@ -1111,49 +1182,82 @@ class BeamSearchSampling(SamplingStrategy):
                 tasks.append(task)
                 beam_refs.append(beam)
 
-            # Run all beam expansions in parallel
             results = await asyncio.gather(*tasks)
 
             for beam, (continuations, pt, ct) in zip(beam_refs, results):
                 total_pt += pt
                 total_ct += ct
-
-                for text, tokens, log_p, log_target, finished in continuations:
-                    if block_num == 0:
-                        candidate_beams.append(Beam(text, tokens, log_p, log_target, finished))
-                    else:
-                        candidate_beams.append(beam.extend(text, tokens, log_p, log_target, finished))
+                for text, tokens, log_p, finished in continuations:
+                    continuations_data.append((beam, text, tokens, log_p, finished))
         else:
             # Fallback path: Make beam_width * n_per_beam separate parallel API calls
             all_tasks = []
 
             for beam in active_beams:
                 prefix = "" if (block_num == 0 and not beam.text) else beam.text
-
-                # Make n_per_beam separate calls for this beam
                 for _ in range(self.n_per_beam):
                     task = self._sample_single_continuation_async(
                         client, prompt, prefix, self.tokens_per_step
                     )
                     all_tasks.append((task, beam))
 
-            # Run ALL API calls in parallel
             results = await asyncio.gather(*[task for task, _ in all_tasks])
 
             for i, result in enumerate(results):
-                text, tokens, log_p, log_target, finished, pt, ct = result
+                text, tokens, log_p, finished, pt, ct = result
                 total_pt += pt
                 total_ct += ct
                 beam = all_tasks[i][1]
+                continuations_data.append((beam, text, tokens, log_p, finished))
 
-                if block_num == 0:
-                    candidate_beams.append(Beam(text, tokens, log_p, log_target, finished))
-                else:
-                    tmp_beam = beam.extend(text, tokens, log_p, log_target, finished)
-                    print(f'tmp_beam: {tmp_beam.text}')
-                    candidate_beams.append(tmp_beam)
+        # Now score all continuations in parallel using the scorer
+        # Generate unique sequence IDs for tracking
+        base_seq_id = block_num * 10000
 
-        return candidate_beams, total_pt, total_ct
+        async def score_and_create_beam(idx: int, parent_beam: Beam, text: str, tokens: list, log_p: list, finished: bool) -> Beam:
+            """Score a continuation and create the resulting beam."""
+            seq_id = base_seq_id + idx
+            prefix = parent_beam.text if block_num > 0 else ""
+
+            # Call scorer to get score for this block
+            score_result = await self.scorer.score_block(
+                client=client,
+                prompt=prompt,
+                prefix=prefix,
+                block_text=text,
+                block_tokens=tokens,
+                block_log_p=log_p,
+                sequence_id=seq_id,
+            )
+
+            if block_num == 0:
+                return Beam(
+                    text=text,
+                    tokens=tokens,
+                    log_p=log_p,
+                    finished=finished,
+                    block_scores=[score_result.score],
+                    cumulative_score=score_result.cumulative_score,
+                    sequence_id=seq_id,
+                )
+            else:
+                return parent_beam.extend(
+                    text=text,
+                    tokens=tokens,
+                    log_p=log_p,
+                    block_score=score_result.score,
+                    cumulative_score=parent_beam.cumulative_score + score_result.score,
+                    finished=finished,
+                )
+
+        # Run all scoring in parallel
+        scoring_tasks = [
+            score_and_create_beam(idx, parent, text, tokens, log_p, finished)
+            for idx, (parent, text, tokens, log_p, finished) in enumerate(continuations_data)
+        ]
+        candidate_beams = await asyncio.gather(*scoring_tasks)
+
+        return list(candidate_beams), total_pt, total_ct
 
     async def _generate_async(self, client: AsyncOpenAI, prompt: str, max_tokens: int = 512) -> tuple[str, int, int]:
         """
@@ -1162,7 +1266,7 @@ class BeamSearchSampling(SamplingStrategy):
         Algorithm:
         1. Start with beam_width INDEPENDENT samples (not 1 empty beam)
         2. For each beam, generate n_per_beam continuations IN PARALLEL (beam branching)
-        3. Score all beam_width × n_per_beam candidates using p^α
+        3. Score all beam_width × n_per_beam candidates using the configured Scorer
         4. Keep top beam_width beams by score
         5. Repeat until max_tokens or all beams finish
 
@@ -1179,10 +1283,13 @@ class BeamSearchSampling(SamplingStrategy):
         if num_blocks < 1:
             num_blocks = 1
 
+        # Reset scorer state for this generation
+        self.scorer.reset_all()
+
         if self.debug:
             print(f"[BeamSearch] TRUE beam search (ASYNC): beam_width={self.beam_width}, n_per_beam={self.n_per_beam}")
             print(f"[BeamSearch] Generating {num_blocks} blocks of {self.tokens_per_step} tokens")
-            print(f"[BeamSearch] α={self.alpha}, length_penalty={self.length_penalty}")
+            print(f"[BeamSearch] Scorer: {self.scorer.get_name()}")
 
         # INITIALIZATION: Generate beam_width INDEPENDENT samples to start with diversity
         if self.debug:
@@ -1194,12 +1301,36 @@ class BeamSearchSampling(SamplingStrategy):
         total_prompt_tokens += init_pt
         total_completion_tokens += init_ct
 
-        # Convert to Beam objects and score
-        scored_init: list[tuple[float, Beam]] = []
-        for text, tokens, log_p, log_target, finished in init_results:
-            beam = Beam(text, tokens, log_p, log_target, finished)
-            score = beam.score(self.use_length_penalty, self.length_penalty)
-            scored_init.append((score, beam))
+        # Score initial samples using the scorer
+        async def score_init_beam(idx: int, text: str, tokens: list, log_p: list, finished: bool) -> tuple[float, Beam]:
+            """Score an initial beam."""
+            score_result = await self.scorer.score_block(
+                client=client,
+                prompt=prompt,
+                prefix="",
+                block_text=text,
+                block_tokens=tokens,
+                block_log_p=log_p,
+                sequence_id=idx,
+            )
+            beam = Beam(
+                text=text,
+                tokens=tokens,
+                log_p=log_p,
+                finished=finished,
+                block_scores=[score_result.score],
+                cumulative_score=score_result.cumulative_score,
+                sequence_id=idx,
+            )
+            return (beam.score(), beam)
+
+        # Score all initial beams in parallel
+        scoring_tasks = [
+            score_init_beam(idx, text, tokens, log_p, finished)
+            for idx, (text, tokens, log_p, finished) in enumerate(init_results)
+        ]
+        scored_init = await asyncio.gather(*scoring_tasks)
+        scored_init = list(scored_init)
 
         # Sort by score and separate completed vs active
         scored_init.sort(key=lambda x: x[0], reverse=True)
@@ -1229,9 +1360,9 @@ class BeamSearchSampling(SamplingStrategy):
             if self.debug:
                 print(f"[BeamSearch] Block {block_num+1}/{num_blocks}: Generated {len(candidate_beams)} candidates (parallel)")
 
-            # Score all candidates
+            # Score all candidates (scores are already computed in _expand_beams_parallel)
             scored_beams: list[tuple[float, Beam]] = [
-                (beam.score(self.use_length_penalty, self.length_penalty), beam)
+                (beam.score(), beam)
                 for beam in candidate_beams
             ]
 
@@ -1261,7 +1392,7 @@ class BeamSearchSampling(SamplingStrategy):
 
         # Select best beam from all (completed + active)
         all_beams: list[tuple[float, Beam]] = completed_beams + [
-            (beam.score(self.use_length_penalty, self.length_penalty), beam)
+            (beam.score(), beam)
             for beam in active_beams
         ]
 
@@ -1271,7 +1402,8 @@ class BeamSearchSampling(SamplingStrategy):
 
         # Sort by score and take best
         all_beams.sort(key=lambda x: x[0], reverse=True)
-        print(f'{[score for score, x in all_beams]}')
+        if self.debug:
+            print(f'{[score for score, x in all_beams]}')
         best_score, best_beam = all_beams[0]
 
         # Store metadata for diagnostics
@@ -1282,8 +1414,8 @@ class BeamSearchSampling(SamplingStrategy):
         if self.debug:
             print(f"[BeamSearch] Final: {len(best_beam)} tokens, score={best_score:.4f}")
             print(f"[BeamSearch] Text: {best_beam.text[:200]}..." if len(best_beam.text) > 200 else f"[BeamSearch] Text: {best_beam.text}")
+            print(f'best beam text: {best_beam.text}')
 
-        print(f'best beam text: {best_beam.text}')
         return best_beam.text, total_prompt_tokens, total_completion_tokens
 
     async def _run_with_client(self, api_key: str, base_url: str, model: str, prompt: str, max_tokens: int):

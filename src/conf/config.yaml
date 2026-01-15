@@ -109,6 +109,34 @@ beam_search:
   top_logprobs: 15 # Number of top log probabilities to retrieve
   debug: false # Print debug info during beam search
 
+# Scorer configuration (pluggable scoring for beam search and MCMC)
+scorer:
+  type: self_eval  # Options: power, self_eval, composite
+
+  # PowerScorer settings (default: α × log_p)
+  power:
+    alpha: 4.0  # Power factor for target distribution π(x) = p(x)^α
+
+  # SelfEvalScorer settings (appends evaluation prompt, uses P("yes"))
+  self_eval:
+    prompt: "Is this reasoning correct so far? Yes or No:"
+    positive_tokens: ["Yes", "yes", " Yes", " yes"]
+    temperature: 0.0  # Temperature for eval API call (0 = deterministic)
+    fallback_score: -10.0  # Score when positive token not in top logprobs
+
+  # CompositeScorer settings (weighted combination)
+  composite:
+    power_weight: 0.7
+    self_eval_weight: 0.3
+
+  # Accumulation settings
+  use_ema: true  # Use exponential moving average for cumulative scores
+  ema_decay: 0.9  # Decay factor (0.9 = 10% weight to new, 90% to history)
+
+  # Length penalty (shared across scorers)
+  use_length_penalty: true
+  length_penalty: 0.6
+
 # Temperature sampling configuration
 temperature_sampling:
   enabled: false
