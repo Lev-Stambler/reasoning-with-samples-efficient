@@ -884,13 +884,17 @@ class Beam:
     log_p: list[float] = field(default_factory=list)
     log_target: list[float] = field(default_factory=list)
     finished: bool = False
+    validation_response: Optional[str] = None  # Store "Yes" or "No" validation
+    validation_entropy: Optional[float] = None  # Entropy of validation response
+    validation_confidence: Optional[float] = None  # Max logprob (confidence)
 
     def __len__(self) -> int:
         """Return number of tokens."""
         return len(self.tokens)
 
     def extend(self, text: str, tokens: list[str], log_p: list[float],
-               log_target: list[float], finished: bool) -> "Beam":
+               log_target: list[float], finished: bool, validation_response: Optional[str] = None,
+               validation_entropy: Optional[float] = None, validation_confidence: Optional[float] = None) -> "Beam":
         """Create a new beam by appending a continuation."""
         return Beam(
             text=self.text + text,
@@ -898,6 +902,9 @@ class Beam:
             log_p=self.log_p + log_p,
             log_target=self.log_target + log_target,
             finished=finished,
+            validation_response=validation_response,
+            validation_entropy=validation_entropy,
+            validation_confidence=validation_confidence,
         )
 
     def score(self, use_length_penalty: bool = False,
@@ -937,6 +944,7 @@ class BeamSearchSampling(SamplingStrategy):
         max_concurrent: int = 100,  # Max concurrent API requests
         timeout: float = 300.0,  # Timeout in seconds (longer for local servers)
         seed: int = None,  # Random seed for API reproducibility
+        validate_candidates: bool = True,  # Whether to ask model if on right track
     ):
         name = f"BeamSearch(α={alpha},width={beam_width},n={n_per_beam},tps={tokens_per_step})"
         super().__init__(name, seed=seed)
@@ -952,6 +960,7 @@ class BeamSearchSampling(SamplingStrategy):
         self.supports_n_param = supports_n_param
         self.max_concurrent = max_concurrent
         self.timeout = timeout
+        self.validate_candidates = validate_candidates
 
     def _extract_logprobs_completion(self, choice) -> tuple[list[str], list[float], list[float]]:
         """Extract tokens and logprobs from completions API choice."""
@@ -1086,6 +1095,74 @@ class BeamSearchSampling(SamplingStrategy):
 
         return results, response.usage.prompt_tokens, response.usage.completion_tokens
 
+    async def _validate_candidate_async(self, client: AsyncOpenAI, original_prompt: str, candidate_text: str) -> tuple[str, float, float]:
+        """
+        Ask the model if the candidate is on the right track.
+        Returns tuple of (response, entropy, confidence):
+        - response: "Yes" or "No"
+        - entropy: entropy of the logprobs distribution (higher = more uncertain)
+        - confidence: probability of the chosen token (higher = more confident)
+        """
+        validation_prompt = f"""{original_prompt}
+
+Current solution attempt:
+{candidate_text}
+
+Are we on the right track? Answer with only 'Yes' or 'No'."""
+
+        try:
+            response = await client.chat.completions.create(
+                model=client.default_model,
+                messages=[{"role": "user", "content": validation_prompt}],
+                temperature=0.0,
+                max_tokens=10,
+                logprobs=True,  # Request logprobs
+                top_logprobs=5,  # Get top 5 alternatives for entropy calculation
+            )
+            
+            answer = response.choices[0].message.content.strip()
+            
+            # Extract logprobs for entropy calculation
+            entropy = None
+            confidence = None
+            
+            if response.choices[0].logprobs and response.choices[0].logprobs.content:
+                # Get logprobs for the first token (should be Yes/No)
+                first_token_logprobs = response.choices[0].logprobs.content[0]
+                
+                if first_token_logprobs.top_logprobs:
+                    # Calculate entropy: H = -Σ p(x) * log(p(x))
+                    # where p(x) = exp(logprob)
+                    probs = [np.exp(lp.logprob) for lp in first_token_logprobs.top_logprobs]
+                    
+                    # Normalize probabilities (they should already sum to ≤1, but ensure numerical stability)
+                    prob_sum = sum(probs)
+                    if prob_sum > 0:
+                        probs = [p / prob_sum for p in probs]
+                        
+                        # Calculate entropy in bits
+                        entropy = -sum(p * np.log2(p) if p > 0 else 0 for p in probs)
+                        
+                        # Confidence is the probability of the chosen token (first one)
+                        confidence = probs[0] if probs else None
+            
+            # Extract Yes or No from response
+            answer_lower = answer.lower()
+            if "yes" in answer_lower:
+                result = "Yes"
+            elif "no" in answer_lower:
+                result = "No"
+            else:
+                # If unclear, default to Yes to not filter out candidates
+                result = "Yes"
+            
+            return result, entropy, confidence
+            
+        except Exception as e:
+            if self.debug:
+                print(f"[BeamSearch] Validation error: {e}")
+            return "Yes", None, None  # Default to Yes on error
+
     async def _expand_beams_parallel(self, client: AsyncOpenAI, active_beams: list[Beam], prompt: str, block_num: int) -> tuple[list[Beam], int, int]:
         """
         Parallelize beam expansion.
@@ -1114,15 +1191,36 @@ class BeamSearchSampling(SamplingStrategy):
             # Run all beam expansions in parallel
             results = await asyncio.gather(*tasks)
 
+            # Build candidate beams
+            candidates_for_validation = []
             for beam, (continuations, pt, ct) in zip(beam_refs, results):
                 total_pt += pt
                 total_ct += ct
 
                 for text, tokens, log_p, log_target, finished in continuations:
                     if block_num == 0:
-                        candidate_beams.append(Beam(text, tokens, log_p, log_target, finished))
+                        new_beam = Beam(text, tokens, log_p, log_target, finished)
                     else:
-                        candidate_beams.append(beam.extend(text, tokens, log_p, log_target, finished))
+                        new_beam = beam.extend(text, tokens, log_p, log_target, finished)
+                    candidates_for_validation.append(new_beam)
+
+            # Validate all candidates in parallel if enabled
+            if self.validate_candidates:
+                validation_tasks = [
+                    self._validate_candidate_async(client, prompt, candidate.text)
+                    for candidate in candidates_for_validation
+                ]
+                validations = await asyncio.gather(*validation_tasks)
+                
+                # Attach validation results to beams
+                for candidate, validation in zip(candidates_for_validation, validations):
+                    candidate.validation_response = validation
+                    candidate_beams.append(candidate)
+                    
+                    if self.debug:
+                        print(f"[BeamSearch]   Candidate validation: {validation} - {candidate.text[:50]}...")
+            else:
+                candidate_beams = candidates_for_validation
         else:
             # Fallback path: Make beam_width * n_per_beam separate parallel API calls
             all_tasks = []
@@ -1140,6 +1238,7 @@ class BeamSearchSampling(SamplingStrategy):
             # Run ALL API calls in parallel
             results = await asyncio.gather(*[task for task, _ in all_tasks])
 
+            candidates_for_validation = []
             for i, result in enumerate(results):
                 text, tokens, log_p, log_target, finished, pt, ct = result
                 total_pt += pt
@@ -1147,11 +1246,33 @@ class BeamSearchSampling(SamplingStrategy):
                 beam = all_tasks[i][1]
 
                 if block_num == 0:
-                    candidate_beams.append(Beam(text, tokens, log_p, log_target, finished))
+                    new_beam = Beam(text, tokens, log_p, log_target, finished)
                 else:
-                    tmp_beam = beam.extend(text, tokens, log_p, log_target, finished)
-                    print(f'tmp_beam: {tmp_beam.text}')
-                    candidate_beams.append(tmp_beam)
+                    new_beam = beam.extend(text, tokens, log_p, log_target, finished)
+                    print(f'tmp_beam: {new_beam.text}')
+                candidates_for_validation.append(new_beam)
+
+            # Validate all candidates in parallel if enabled
+            if self.validate_candidates:
+                validation_tasks = [
+                    self._validate_candidate_async(client, prompt, candidate.text)
+                    for candidate in candidates_for_validation
+                ]
+                validations = await asyncio.gather(*validation_tasks)
+                
+                # Attach validation results to beams
+                for candidate, (validation, entropy, confidence) in zip(candidates_for_validation, validations):
+                    candidate.validation_response = validation
+                    candidate.validation_entropy = entropy
+                    candidate.validation_confidence = confidence
+                    candidate_beams.append(candidate)
+                    
+                    if self.debug:
+                        entropy_str = f"{entropy:.3f}" if entropy is not None else "N/A"
+                        conf_str = f"{confidence:.3f}" if confidence is not None else "N/A"
+                        print(f"[BeamSearch]   Candidate validation: {validation} (entropy={entropy_str}, conf={conf_str}) - {candidate.text[:50]}...")
+            else:
+                candidate_beams = candidates_for_validation
 
         return candidate_beams, total_pt, total_ct
 
