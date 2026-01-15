@@ -32,6 +32,7 @@ from benchmark_runner import (
     TemperatureSampling,
     BenchmarkMetrics
 )
+from scorers import create_scorer
 from swebench_benchmark import SWEBenchLiteBenchmark, SWEBenchVerifiedBenchmark
 from gsm8k_benchmark import GSM8KBenchmark, GSM8KTrainBenchmark
 from mmlu_benchmark import (
@@ -194,6 +195,12 @@ def main(cfg: DictConfig):
             print("   Or set model.runpod.base_url in config")
             return
         print(f"Using RunPod: {model_name} at {base_url}")
+    elif provider == "ollama":
+        model_name = cfg.model.ollama.name
+        base_url = cfg.model.ollama.base_url
+        api_key = "ollama"  # Ollama doesn't require API key
+        supports_n_param = True  # Ollama supports n parameter
+        print(f"Using Ollama: {model_name} at {base_url}")
     else:  # xai (default)
         model_name = cfg.model.xai.name
         base_url = cfg.model.xai.base_url
@@ -235,11 +242,33 @@ def main(cfg: DictConfig):
     # Get seed for API reproducibility (None if not set)
     api_seed = cfg.benchmark.get("seed")
 
+    # Create scorer from config (if scorer section exists)
+    scorer = None
+    if hasattr(cfg, 'scorer'):
+        scorer_cfg = cfg.scorer
+        scorer = create_scorer(
+            scorer_type=scorer_cfg.get('type', 'power'),
+            alpha=scorer_cfg.power.get('alpha', 4.0) if hasattr(scorer_cfg, 'power') else 4.0,
+            eval_prompt=scorer_cfg.self_eval.get('prompt') if hasattr(scorer_cfg, 'self_eval') else None,
+            positive_tokens=list(scorer_cfg.self_eval.get('positive_tokens', [])) if hasattr(scorer_cfg, 'self_eval') else None,
+            eval_temperature=scorer_cfg.self_eval.get('temperature', 0.0) if hasattr(scorer_cfg, 'self_eval') else 0.0,
+            fallback_score=scorer_cfg.self_eval.get('fallback_score', -10.0) if hasattr(scorer_cfg, 'self_eval') else -10.0,
+            power_weight=scorer_cfg.composite.get('power_weight', 0.7) if hasattr(scorer_cfg, 'composite') else 0.7,
+            self_eval_weight=scorer_cfg.composite.get('self_eval_weight', 0.3) if hasattr(scorer_cfg, 'composite') else 0.3,
+            use_length_penalty=scorer_cfg.get('use_length_penalty', True),
+            length_penalty=scorer_cfg.get('length_penalty', 0.6),
+            use_ema=scorer_cfg.get('use_ema', False),
+            ema_decay=scorer_cfg.get('ema_decay', 0.9),
+            model=model_name,
+        )
+        print(f"[Config] Created scorer: {scorer.get_name()}")
+
     if getattr(cfg.greedy, 'enabled', False):
         strategies.append(GreedySampling(seed=api_seed))
 
     if getattr(cfg.mcmc, 'enabled', False):
         strategies.append(MCMCSampling(
+            scorer=scorer,
             alpha=cfg.mcmc.alpha,
             mcmc_steps=cfg.mcmc.steps,
             top_logprobs=cfg.mcmc.top_logprobs,
@@ -252,6 +281,7 @@ def main(cfg: DictConfig):
 
     if getattr(cfg.mcmc_parallel, 'enabled', False):
         strategies.append(ParallelMCMCSampling(
+            scorer=scorer,
             alpha=cfg.mcmc_parallel.alpha,
             mcmc_steps=cfg.mcmc_parallel.steps,
             top_logprobs=cfg.mcmc_parallel.top_logprobs,
@@ -273,6 +303,7 @@ def main(cfg: DictConfig):
 
     if getattr(cfg.beam_search, 'enabled', False):
         strategies.append(BeamSearchSampling(
+            scorer=scorer,
             alpha=cfg.beam_search.alpha,
             beam_width=cfg.beam_search.beam_width,
             n_per_beam=cfg.beam_search.n_per_beam,
@@ -322,3 +353,4 @@ def main(cfg: DictConfig):
 
 if __name__ == "__main__":
     main()
+
