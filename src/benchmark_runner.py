@@ -943,13 +943,15 @@ class Beam:
     block_scores: list[float] = field(default_factory=list)
     cumulative_score: float = 0.0
     sequence_id: int = 0
+    score_stats: tuple[float, int, float] | None = None  # (raw_cumulative, total_tokens, prev_cumulative)
 
     def __len__(self) -> int:
         """Return number of tokens."""
         return len(self.tokens)
 
     def extend(self, text: str, tokens: list[str], log_p: list[float],
-               block_score: float, cumulative_score: float, finished: bool) -> "Beam":
+               block_score: float, cumulative_score: float, finished: bool,
+               score_stats: tuple[float, int, float] | None = None) -> "Beam":
         """Create a new beam by appending a continuation."""
         return Beam(
             text=self.text + text,
@@ -959,6 +961,7 @@ class Beam:
             block_scores=self.block_scores + [block_score],
             cumulative_score=cumulative_score,
             sequence_id=self.sequence_id,
+            score_stats=score_stats,
         )
 
     def score(self) -> float:
@@ -1210,16 +1213,13 @@ class BeamSearchSampling(SamplingStrategy):
                 beam = all_tasks[i][1]
                 continuations_data.append((beam, text, tokens, log_p, finished))
 
-        # Now score all continuations in parallel using the scorer
-        # Generate unique sequence IDs for tracking
-        base_seq_id = block_num * 10000
-
+        # Now score all continuations in parallel using the scorer (stateless via score_stats)
         async def score_and_create_beam(idx: int, parent_beam: Beam, text: str, tokens: list, log_p: list, finished: bool) -> Beam:
             """Score a continuation and create the resulting beam."""
-            seq_id = base_seq_id + idx
+            seq_id = idx if block_num == 0 else parent_beam.sequence_id
             prefix = parent_beam.text if block_num > 0 else ""
 
-            # Call scorer to get score for this block
+            # Call scorer with parent's score_stats for stateless scoring (avoids race conditions)
             score_result = await self.scorer.score_block(
                 client=client,
                 prompt=prompt,
@@ -1228,6 +1228,7 @@ class BeamSearchSampling(SamplingStrategy):
                 block_tokens=tokens,
                 block_log_p=log_p,
                 sequence_id=seq_id,
+                score_stats=parent_beam.score_stats,
             )
 
             if block_num == 0:
@@ -1239,6 +1240,7 @@ class BeamSearchSampling(SamplingStrategy):
                     block_scores=[score_result.score],
                     cumulative_score=score_result.cumulative_score,
                     sequence_id=seq_id,
+                    score_stats=score_result.score_stats,
                 )
             else:
                 return parent_beam.extend(
@@ -1246,8 +1248,9 @@ class BeamSearchSampling(SamplingStrategy):
                     tokens=tokens,
                     log_p=log_p,
                     block_score=score_result.score,
-                    cumulative_score=parent_beam.cumulative_score + score_result.score,
+                    cumulative_score=score_result.cumulative_score,
                     finished=finished,
+                    score_stats=score_result.score_stats,
                 )
 
         # Run all scoring in parallel

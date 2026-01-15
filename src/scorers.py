@@ -20,6 +20,7 @@ class ScoreResult:
     score: float                    # The block score value
     cumulative_score: float         # Accumulated score across all blocks
     metadata: Optional[dict] = None # Optional scorer-specific data
+    score_stats: Optional[Tuple[float, int, float]] = None  # (raw_cumulative, total_tokens, prev_cumulative) for stateless scoring
 
 
 class Scorer(ABC):
@@ -62,6 +63,7 @@ class Scorer(ABC):
         block_tokens: List[str],
         block_log_p: List[float],
         sequence_id: int = 0,
+        score_stats: Optional[Tuple[float, int, float]] = None,
     ) -> ScoreResult:
         """
         Score a single block of generated text.
@@ -74,9 +76,10 @@ class Scorer(ABC):
             block_tokens: Tokens in the block
             block_log_p: Log probabilities for each token
             sequence_id: Unique ID to track cumulative scores
+            score_stats: Parent's (raw_cumulative, total_tokens, prev_cumulative) for stateless scoring
 
         Returns:
-            ScoreResult with block score and cumulative score
+            ScoreResult with block score, cumulative score, and updated score_stats
         """
         pass
 
@@ -170,24 +173,36 @@ class PowerScorer(Scorer):
         block_tokens: List[str],
         block_log_p: List[float],
         sequence_id: int = 0,
+        score_stats: Optional[Tuple[float, int, float]] = None,
     ) -> ScoreResult:
-        """Score using alpha * sum(log_p) with global length penalty."""
+        """Score using alpha * sum(log_p) with global length penalty.
+
+        If score_stats is provided, uses stateless scoring (for beam search branching).
+        Otherwise falls back to stateful tracking via sequence_id.
+        """
         if not block_log_p:
+            prev_cumulative = score_stats[2] if score_stats else self.get_cumulative(sequence_id)
             return ScoreResult(
                 score=float('-inf'),
-                cumulative_score=self.get_cumulative(sequence_id),
-                metadata={"alpha": self.alpha, "num_tokens": 0}
+                cumulative_score=prev_cumulative,
+                metadata={"alpha": self.alpha, "num_tokens": 0},
+                score_stats=score_stats,
             )
 
         # Compute block score: alpha * sum(log_p)
         block_log_target = self.alpha * sum(block_log_p)
         block_len = len(block_tokens)
 
-        # Update cumulative stats (raw values)
-        current_stats = self._sequence_stats.get(sequence_id, (0.0, 0))
-        new_total_log_target = current_stats[0] + block_log_target
-        new_total_len = current_stats[1] + block_len
-        self._sequence_stats[sequence_id] = (new_total_log_target, new_total_len)
+        # Get parent stats: prefer explicit score_stats, fall back to internal state
+        if score_stats is not None:
+            parent_raw, parent_len, parent_cumulative = score_stats
+        else:
+            parent_stats = self._sequence_stats.get(sequence_id, (0.0, 0))
+            parent_raw, parent_len = parent_stats
+            parent_cumulative = self._cumulative_scores.get(sequence_id, 0.0)
+
+        new_total_log_target = parent_raw + block_log_target
+        new_total_len = parent_len + block_len
 
         # Apply length penalty to TOTAL cumulative score (not per-block)
         if self.use_length_penalty and new_total_len > 0:
@@ -197,10 +212,12 @@ class PowerScorer(Scorer):
 
         # For EMA, apply to the cumulative score
         if self.use_ema:
-            prev_cumulative = self._cumulative_scores.get(sequence_id, 0.0)
-            cumulative_score = self.ema_decay * prev_cumulative + (1 - self.ema_decay) * cumulative_score
+            cumulative_score = self.ema_decay * parent_cumulative + (1 - self.ema_decay) * cumulative_score
 
-        self._cumulative_scores[sequence_id] = cumulative_score
+        # Update internal state only if not using explicit score_stats (backwards compat)
+        if score_stats is None:
+            self._sequence_stats[sequence_id] = (new_total_log_target, new_total_len)
+            self._cumulative_scores[sequence_id] = cumulative_score
 
         return ScoreResult(
             score=block_log_target,  # Raw block score (for MH ratio in MCMC)
@@ -210,7 +227,8 @@ class PowerScorer(Scorer):
                 "num_tokens": block_len,
                 "total_tokens": new_total_len,
                 "raw_cumulative": new_total_log_target,
-            }
+            },
+            score_stats=(new_total_log_target, new_total_len, cumulative_score),
         )
 
     def reset_sequence(self, sequence_id: int) -> None:
@@ -287,6 +305,7 @@ class SelfEvalScorer(Scorer):
         block_tokens: List[str],
         block_log_p: List[float],
         sequence_id: int = 0,
+        score_stats: Optional[Tuple[float, int, float]] = None,
     ) -> ScoreResult:
         """
         Score by appending eval prompt and getting P(positive_token).
@@ -305,8 +324,19 @@ class SelfEvalScorer(Scorer):
         # Apply length penalty if needed
         block_score = self._apply_length_penalty(raw_score, len(block_tokens))
 
-        # Update cumulative
-        cumulative = self._update_cumulative(sequence_id, block_score)
+        # Use score_stats if provided (stateless), otherwise use stateful tracking
+        if score_stats is not None:
+            parent_raw, parent_len, parent_cumulative = score_stats
+            new_raw = parent_raw + block_score
+            new_len = parent_len + len(block_tokens)
+            if self.use_ema:
+                cumulative = self.ema_decay * parent_cumulative + (1 - self.ema_decay) * new_raw
+            else:
+                cumulative = new_raw
+            new_score_stats = (new_raw, new_len, cumulative)
+        else:
+            cumulative = self._update_cumulative(sequence_id, block_score)
+            new_score_stats = None
 
         return ScoreResult(
             score=block_score,
@@ -316,7 +346,8 @@ class SelfEvalScorer(Scorer):
                 "raw_score": raw_score,
                 "top_logprobs": eval_response.get("top_logprobs", {}),
                 "generated_token": eval_response.get("token", ""),
-            }
+            },
+            score_stats=new_score_stats,
         )
 
     async def _get_eval_logprobs(self, client: Any, prompt: str, context: str) -> dict:
@@ -426,13 +457,14 @@ class CompositeScorer(Scorer):
         block_tokens: List[str],
         block_log_p: List[float],
         sequence_id: int = 0,
+        score_stats: Optional[Tuple[float, int, float]] = None,
     ) -> ScoreResult:
         """Score using weighted combination of all scorers."""
-        # Run all scorers in parallel
+        # Run all scorers in parallel, passing score_stats for stateless scoring
         tasks = [
             scorer.score_block(
                 client, prompt, prefix, block_text,
-                block_tokens, block_log_p, sequence_id
+                block_tokens, block_log_p, sequence_id, score_stats
             )
             for scorer, _ in self.scorers
         ]
@@ -444,8 +476,19 @@ class CompositeScorer(Scorer):
             for result, (_, weight) in zip(results, self.normalized_weights)
         )
 
-        # Update cumulative (note: individual scorers also track their own cumulative)
-        cumulative = self._update_cumulative(sequence_id, weighted_score)
+        # Use score_stats if provided (stateless), otherwise use stateful tracking
+        if score_stats is not None:
+            parent_raw, parent_len, parent_cumulative = score_stats
+            new_raw = parent_raw + weighted_score
+            new_len = parent_len + len(block_tokens)
+            if self.use_ema:
+                cumulative = self.ema_decay * parent_cumulative + (1 - self.ema_decay) * new_raw
+            else:
+                cumulative = new_raw
+            new_score_stats = (new_raw, new_len, cumulative)
+        else:
+            cumulative = self._update_cumulative(sequence_id, weighted_score)
+            new_score_stats = None
 
         return ScoreResult(
             score=weighted_score,
@@ -454,7 +497,8 @@ class CompositeScorer(Scorer):
                 "component_scores": [r.score for r in results],
                 "component_names": [s.get_name() for s, _ in self.scorers],
                 "weights": [w for _, w in self.normalized_weights],
-            }
+            },
+            score_stats=new_score_stats,
         )
 
     def reset_sequence(self, sequence_id: int) -> None:
