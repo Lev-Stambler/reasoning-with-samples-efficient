@@ -6,7 +6,7 @@ Each problem takes between 2 and 8 steps to solve, and solutions primarily invol
 a sequence of elementary calculations using basic arithmetic operations.
 """
 
-from benchmark_runner import Benchmark
+from .base import Benchmark
 from typing import Dict
 from datasets import load_dataset
 import re

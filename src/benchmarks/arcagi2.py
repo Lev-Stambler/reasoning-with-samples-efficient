@@ -12,7 +12,7 @@ Dataset: https://github.com/arcprize/ARC-AGI-2
 Evaluation is pixel-perfect: the predicted output grid must exactly match the expected grid.
 """
 
-from benchmark_runner import Benchmark
+from .base import Benchmark
 from typing import Dict, List, Optional
 import json
 import os

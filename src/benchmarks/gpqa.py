@@ -10,7 +10,7 @@ Dataset: https://huggingface.co/datasets/Idavidrein/gpqa
 
 import random
 import re
-from benchmark_runner import Benchmark
+from .base import Benchmark
 from typing import Dict, List
 from datasets import load_dataset
 

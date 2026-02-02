@@ -8,7 +8,7 @@ with 4 options (A, B, C, D).
 Dataset: https://huggingface.co/datasets/cais/mmlu
 """
 
-from benchmark_runner import Benchmark
+from .base import Benchmark
 from typing import Dict, List, Optional
 from datasets import load_dataset
 import re

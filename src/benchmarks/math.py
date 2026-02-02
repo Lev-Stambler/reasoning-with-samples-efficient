@@ -9,11 +9,11 @@ import json
 import os
 import re
 import sys
-from benchmark_runner import Benchmark
+from .base import Benchmark
 from typing import Dict
 
 # Add parent directory to path for importing grader utilities
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'llm_experiments'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'llm_experiments'))
 from grader_utils.math_grader import grade_answer
 
 
